@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"jch-metadata/internal/parser"
+	"jch-metadata/internal/parser/flac"
+	"jch-metadata/internal/parser/mkv"
 	"os"
 )
 
@@ -12,7 +14,8 @@ var inputFilename string
 
 func main() {
 	parsers := []parser.Parser{
-		parser.MkvParser,
+		mkv.Parser,
+		flac.Parser,
 	}
 	flag.StringVar(&inputFilename, "f", "", "Input filename")
 	flag.StringVar(&actionArg, "a", "show", "Action to perform: show, clear")
@@ -47,6 +50,8 @@ func main() {
 		if !supported {
 			continue
 		}
+		fmt.Printf("Processing file type %s...\n", p.Name)
+		fmt.Println()
 		err = p.Handle(file, action)
 		if err != nil {
 			fmt.Println("Error handling file:", err)

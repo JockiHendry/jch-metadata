@@ -1,28 +1,29 @@
-package parser
+package mkv
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"jch-metadata/internal/parser"
 	"os"
 	"time"
 )
 
-var MkvParser = Parser{
+var Parser = parser.Parser{
 	Name: "Mkv (Matroska)",
 	Support: func(file *os.File) (bool, error) {
 		return IsMkv(file)
 	},
-	Handle: func(file *os.File, action Action) error {
+	Handle: func(file *os.File, action parser.Action) error {
 		metadata, err := GetMetadata(file)
 		if err != nil {
 			return err
 		}
-		if action == ShowAction {
+		if action == parser.ShowAction {
 			for _, m := range metadata {
 				Show(m)
 			}
-		} else if action == ClearAction {
+		} else if action == parser.ClearAction {
 			err = ClearMetadata(file)
 			if err != nil {
 				return err
@@ -35,7 +36,7 @@ var MkvParser = Parser{
 	},
 }
 
-func Show(m MkvMetadata) {
+func Show(m Metadata) {
 	fmt.Println("Info")
 	fmt.Println("====")
 	fmt.Printf("Filename    : %s\n", m.Info.Filename)
@@ -85,12 +86,9 @@ func Show(m MkvMetadata) {
 
 func IsMkv(file *os.File) (bool, error) {
 	magicBytes := make([]byte, 4)
-	n, err := file.ReadAt(magicBytes, 0)
+	_, err := file.ReadAt(magicBytes, 0)
 	if err != nil {
 		return false, fmt.Errorf("failed to read file: %w", err)
-	}
-	if n != 4 {
-		return false, fmt.Errorf("unexpected bytes returned: %d", n)
 	}
 	return bytes.Equal(magicBytes, []byte{0x1A, 0x45, 0xDF, 0xA3}), nil
 }
@@ -309,8 +307,8 @@ func GetTrackType(value uint64) string {
 	}
 }
 
-func GetMetadata(file *os.File) ([]MkvMetadata, error) {
-	var result []MkvMetadata
+func GetMetadata(file *os.File) ([]Metadata, error) {
+	var result []Metadata
 	elements, err := ParseFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file stat: %w", err)
@@ -319,7 +317,7 @@ func GetMetadata(file *os.File) ([]MkvMetadata, error) {
 		if !bytes.Equal(v.ElementID, []byte{0x18, 0x53, 0x80, 0x67}) {
 			continue
 		}
-		metadata := MkvMetadata{}
+		metadata := Metadata{}
 		e, _ := v.GetElements()
 
 		infoElement := SearchEBMLElements([]byte{0x15, 0x49, 0xA9, 0x66}, e)
@@ -330,14 +328,14 @@ func GetMetadata(file *os.File) ([]MkvMetadata, error) {
 		metadata.Info.MuxingApp = GetStringValue([]byte{0x4D, 0x80}, infoElements)
 		metadata.Info.WritingApp = GetStringValue([]byte{0x57, 0x41}, infoElements)
 
-		var tracks []MkvTrack
+		var tracks []Track
 		trackElement := SearchEBMLElements([]byte{0x16, 0x54, 0xAE, 0x6B}, e)
 		if trackElement != nil {
 			trackElements, _ := trackElement.GetElements()
 			for _, t := range trackElements {
 				if bytes.Equal(t.ElementID, []byte{0xAE}) {
 					elements, _ := t.GetElements()
-					track := MkvTrack{
+					track := Track{
 						Number:   GetUInt64Value([]byte{0xD7}, elements),
 						Name:     GetStringValue([]byte{0x53, 0x6E}, elements),
 						Type:     GetUInt64Value([]byte{0x83}, elements),
@@ -349,14 +347,14 @@ func GetMetadata(file *os.File) ([]MkvMetadata, error) {
 		}
 		metadata.Tracks = tracks
 
-		var attachments []MkvAttachment
+		var attachments []Attachment
 		attachmentElement := SearchEBMLElements([]byte{0x19, 0x41, 0xA4, 0x69}, e)
 		if attachmentElement != nil {
 			attachmentsElements, _ := attachmentElement.GetElements()
 			for _, a := range attachmentsElements {
 				if bytes.Equal(a.ElementID, []byte{0x61, 0xA7}) {
 					elements, _ := a.GetElements()
-					attachment := MkvAttachment{
+					attachment := Attachment{
 						Name:        GetStringValue([]byte{0x46, 0x6E}, elements),
 						Description: GetStringValue([]byte{0x46, 0x7E}, elements),
 						MediaType:   GetStringValue([]byte{0x46, 0x60}, elements),
@@ -367,14 +365,14 @@ func GetMetadata(file *os.File) ([]MkvMetadata, error) {
 		}
 		metadata.Attachments = attachments
 
-		var tags []MkvTag
+		var tags []Tag
 		tagElement := SearchEBMLElements([]byte{0x12, 0x54, 0xC3, 0x67}, e)
 		if tagElement != nil {
 			tagElements, _ := tagElement.GetElements()
 			for _, t := range tagElements {
 				if bytes.Equal(t.ElementID, []byte{0x73, 0x73}) {
 					elements, _ := t.GetElements()
-					tag := MkvTag{
+					tag := Tag{
 						TargetType: GetStringValue([]byte{0x63, 0xCA}, elements),
 					}
 					simpleTag := SearchEBMLElements([]byte{0x67, 0xC8}, elements)
@@ -434,7 +432,7 @@ func ClearMetadata(file *os.File) error {
 	return nil
 }
 
-type MkvMetadata struct {
+type Metadata struct {
 	Info struct {
 		Filename   string
 		DateUTC    time.Time
@@ -442,25 +440,25 @@ type MkvMetadata struct {
 		MuxingApp  string
 		WritingApp string
 	}
-	Tracks      []MkvTrack
-	Attachments []MkvAttachment
-	Tags        []MkvTag
+	Tracks      []Track
+	Attachments []Attachment
+	Tags        []Tag
 }
 
-type MkvTrack struct {
+type Track struct {
 	Number   uint64
 	Name     string
 	Type     uint64
 	Language string
 }
 
-type MkvAttachment struct {
+type Attachment struct {
 	Name        string
 	MediaType   string
 	Description string
 }
 
-type MkvTag struct {
+type Tag struct {
 	Name       string
 	TargetType string
 	Language   string

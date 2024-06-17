@@ -1,27 +1,28 @@
-package parser
+package test
 
 import (
+	"jch-metadata/internal/parser/mkv"
 	"os"
 	"testing"
 )
 
-func TestSupportedFile(t *testing.T) {
-	f, err := os.Open("internal/parser/test_assets/test1.mkv")
+func TestIsMkv(t *testing.T) {
+	f, err := os.Open("internal/parser/test/test1.mkv")
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := IsMkv(f)
+	result, err := mkv.IsMkv(f)
 	if err != nil {
 		t.Fatalf("Error inspecting file: %s", err)
 	}
 	if !result {
 		t.Fatalf("Result should be true")
 	}
-	f, err = os.Open("internal/parser/test_assets/test1.webm")
+	f, err = os.Open("internal/parser/test/test1.webm")
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err = IsMkv(f)
+	result, err = mkv.IsMkv(f)
 	if err != nil {
 		t.Fatalf("Error inspecting file: %s", err)
 	}
@@ -30,12 +31,12 @@ func TestSupportedFile(t *testing.T) {
 	}
 }
 
-func TestUnsupportedFile(t *testing.T) {
-	f, err := os.Open("internal/parser/test_assets/test1.png")
+func TestIsMkv_Unsupported(t *testing.T) {
+	f, err := os.Open("internal/parser/test/test1.png")
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := IsMkv(f)
+	result, err := mkv.IsMkv(f)
 	if err != nil {
 		t.Fatalf("Error inspecting file: %s", err)
 	}
@@ -45,49 +46,49 @@ func TestUnsupportedFile(t *testing.T) {
 }
 
 func TestGetVSize(t *testing.T) {
-	size, offset := GetVSize([]byte{0x88})
+	size, offset := mkv.GetVSize([]byte{0x88})
 	if size != 8 {
 		t.Fatalf("Invalid calculated size, should be 8 but received %d", size)
 	}
 	if offset != 1 {
 		t.Fatalf("Invalid calculated offset, should be 1 but received %d", offset)
 	}
-	size, offset = GetVSize([]byte{0x82})
+	size, offset = mkv.GetVSize([]byte{0x82})
 	if size != 2 {
 		t.Fatalf("Invalid calculated size, should be 2 but received %d", size)
 	}
 	if offset != 1 {
 		t.Fatalf("Invalid calculated offset, should be 1 but received %d", offset)
 	}
-	size, offset = GetVSize([]byte{0x40, 0x02})
+	size, offset = mkv.GetVSize([]byte{0x40, 0x02})
 	if size != 2 {
 		t.Fatalf("Invalid calculated size, should be 2 but received %d", size)
 	}
 	if offset != 2 {
 		t.Fatalf("Invalid calculated offset, should be 2 but received %d", offset)
 	}
-	size, offset = GetVSize([]byte{0x20, 0x00, 0x02})
+	size, offset = mkv.GetVSize([]byte{0x20, 0x00, 0x02})
 	if size != 2 {
 		t.Fatalf("Invalid calculated size, should be 2 but received %d", size)
 	}
 	if offset != 3 {
 		t.Fatalf("Invalid calculated offset, should be 3 but received %d", offset)
 	}
-	size, offset = GetVSize([]byte{0x10, 0x00, 0x00, 0x02})
+	size, offset = mkv.GetVSize([]byte{0x10, 0x00, 0x00, 0x02})
 	if size != 2 {
 		t.Fatalf("Invalid calculated size, should be 2 but received %d", size)
 	}
 	if offset != 4 {
 		t.Fatalf("Invalid calculated offset, should be 4 but received %d", offset)
 	}
-	size, offset = GetVSize([]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3a})
+	size, offset = mkv.GetVSize([]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3a})
 	if size != 58 {
 		t.Fatalf("Invalid calculated size, should be 58 but received %d", size)
 	}
 	if offset != 8 {
 		t.Fatalf("Invalid calculated offset, should be 8 but received %d", offset)
 	}
-	size, offset = GetVSize([]byte{0x00})
+	size, offset = mkv.GetVSize([]byte{0x00})
 	if size != 0 {
 		t.Fatalf("Invalid calculated size, should be 0 but received %d", size)
 	}
@@ -97,18 +98,18 @@ func TestGetVSize(t *testing.T) {
 }
 
 func TestParseFile(t *testing.T) {
-	f, err := os.Open("internal/parser/test_assets/test1.mkv")
+	f, err := os.Open("internal/parser/test/test1.mkv")
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := ParseFile(f)
+	result, err := mkv.ParseFile(f)
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
 	if len(result) != 2 {
 		t.Fatalf("Expected 2 elements found but received %d", len(result))
 	}
-	headerElement := SearchEBMLElements([]byte{0x1a, 0x45, 0xdf, 0xa3}, result)
+	headerElement := mkv.SearchEBMLElements([]byte{0x1a, 0x45, 0xdf, 0xa3}, result)
 	if headerElement == nil {
 		t.Fatalf("Can't find header element")
 	}
@@ -128,7 +129,7 @@ func TestParseFile(t *testing.T) {
 	if len(headerElements) != 3 {
 		t.Fatalf("Expected header elements to be 3 but found %d", len(headerElements))
 	}
-	docTypeElement := SearchEBMLElements([]byte{0x42, 0x82}, headerElements)
+	docTypeElement := mkv.SearchEBMLElements([]byte{0x42, 0x82}, headerElements)
 	if docTypeElement == nil {
 		t.Fatalf("Can't find docTypeElement")
 	}
@@ -142,7 +143,7 @@ func TestParseFile(t *testing.T) {
 	if docTypeElementValue != "matroska" {
 		t.Fatalf("Invalid value for docTypeElement, should be 'matroska' but received %s", docTypeElementValue)
 	}
-	docTypeVersion := SearchEBMLElements([]byte{0x42, 0x87}, headerElements)
+	docTypeVersion := mkv.SearchEBMLElements([]byte{0x42, 0x87}, headerElements)
 	if docTypeVersion == nil {
 		t.Fatalf("Can't find docTypeVersion")
 	}
@@ -156,7 +157,7 @@ func TestParseFile(t *testing.T) {
 	if docTypeVersionValue != 2 {
 		t.Fatalf("Invalid value for docTypeVersion, should be 2 but received %d", docTypeVersionValue)
 	}
-	rootElement := SearchEBMLElements([]byte{0x18, 0x53, 0x80, 0x67}, result)
+	rootElement := mkv.SearchEBMLElements([]byte{0x18, 0x53, 0x80, 0x67}, result)
 	if rootElement == nil {
 		t.Fatalf("Can't find root element")
 	}
@@ -169,17 +170,17 @@ func TestParseFile(t *testing.T) {
 	if rootElement.DataAt != 32 {
 		t.Fatalf("Expected root element data started at file offset 32 but found %d", rootElement.StartAt)
 	}
-	if SearchEBMLElements([]byte{0x99, 0x99}, result) != nil {
+	if mkv.SearchEBMLElements([]byte{0x99, 0x99}, result) != nil {
 		t.Fatalf("Searching non existing element should return nil")
 	}
 }
 
 func TestGetMetadata(t *testing.T) {
-	f, err := os.Open("internal/parser/test_assets/test1.mkv")
+	f, err := os.Open("internal/parser/test/test1.mkv")
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	metadata, err := GetMetadata(f)
+	metadata, err := mkv.GetMetadata(f)
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
