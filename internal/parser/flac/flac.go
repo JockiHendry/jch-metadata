@@ -4,17 +4,19 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
 	"os"
 )
 
 var Parser = parser.Parser{
-	Name: "FLAC",
-	Support: func(file *os.File) (bool, error) {
-		return IsFLAC(file)
+	Name:      "FLAC",
+	Container: false,
+	Support: func(file *os.File, startOffset int64) (bool, error) {
+		return IsFLAC(file, startOffset)
 	},
-	Handle: func(file *os.File, action parser.Action) error {
-		metadata, err := GetMetadata(file)
+	Handle: func(file *os.File, action parser.Action, startOffset int64, parsers []parser.Parser) error {
+		metadata, err := GetMetadata(file, startOffset)
 		if err != nil {
 			return err
 		}
@@ -26,17 +28,17 @@ var Parser = parser.Parser{
 					if err != nil {
 						return err
 					}
-					fmt.Printf("Vendor String  :  %s\n", comment.VendorString)
-					fmt.Println("User Comments  :")
+					output.PrintForm(startOffset > 0, "Vendor String", comment.VendorString, 13)
+					output.PrintHeader(startOffset > 0, "User Comments")
 					for _, c := range comment.UserComment {
-						fmt.Printf(" %s\n", c)
+						output.Printf(startOffset > 0, " %s\n", c)
 					}
-					fmt.Println()
+					output.Println(startOffset > 0)
 					found = true
 				}
 			}
 			if !found {
-				fmt.Println("Vorbis comment metadata not found!")
+				output.Println(startOffset > 0, "Vorbis comment metadata not found!")
 			}
 		} else if action == parser.ClearAction {
 			found := false
@@ -61,18 +63,18 @@ var Parser = parser.Parser{
 	},
 }
 
-func IsFLAC(file *os.File) (bool, error) {
+func IsFLAC(file *os.File, startOffset int64) (bool, error) {
 	magicBytes := make([]byte, 4)
-	_, err := file.ReadAt(magicBytes, 0)
+	_, err := file.ReadAt(magicBytes, startOffset)
 	if err != nil {
 		return false, fmt.Errorf("failed to read file: %w", err)
 	}
 	return bytes.Equal(magicBytes, []byte{0x66, 0x4C, 0x61, 0x43}), nil
 }
 
-func GetMetadata(file *os.File) ([]Metadata, error) {
+func GetMetadata(file *os.File, offset int64) ([]Metadata, error) {
 	var result []Metadata
-	offset := int64(4)
+	offset = offset + int64(4)
 	for {
 		header := make([]byte, 4)
 		_, err := file.ReadAt(header, offset)

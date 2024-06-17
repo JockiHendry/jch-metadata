@@ -11,7 +11,7 @@ func TestIsMkv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := mkv.IsMkv(f)
+	result, err := mkv.IsMkv(f, 0)
 	if err != nil {
 		t.Fatalf("Error inspecting file: %s", err)
 	}
@@ -22,7 +22,7 @@ func TestIsMkv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err = mkv.IsMkv(f)
+	result, err = mkv.IsMkv(f, 0)
 	if err != nil {
 		t.Fatalf("Error inspecting file: %s", err)
 	}
@@ -36,7 +36,7 @@ func TestIsMkv_Unsupported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := mkv.IsMkv(f)
+	result, err := mkv.IsMkv(f, 0)
 	if err != nil {
 		t.Fatalf("Error inspecting file: %s", err)
 	}

@@ -11,7 +11,7 @@ func TestIsFlac(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := flac.IsFLAC(f)
+	result, err := flac.IsFLAC(f, 0)
 	if !result {
 		t.Fatalf("Result should be true")
 	}
@@ -22,7 +22,7 @@ func TestIsFlac_Unsupported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := flac.IsFLAC(f)
+	result, err := flac.IsFLAC(f, 0)
 	if result {
 		t.Fatalf("Result should be false")
 	}
@@ -33,7 +33,7 @@ func TestFlacMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	metadata, err := flac.GetMetadata(f)
+	metadata, err := flac.GetMetadata(f, 0)
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}

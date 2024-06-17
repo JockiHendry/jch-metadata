@@ -4,89 +4,95 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
 	"os"
 	"time"
 )
 
 var Parser = parser.Parser{
-	Name: "Mkv (Matroska)",
-	Support: func(file *os.File) (bool, error) {
-		return IsMkv(file)
+	Name:      "Mkv (Matroska)",
+	Container: true,
+	Support: func(file *os.File, startOffset int64) (bool, error) {
+		return IsMkv(file, startOffset)
 	},
-	Handle: func(file *os.File, action parser.Action) error {
+	Handle: func(file *os.File, action parser.Action, startOffset int64, parsers []parser.Parser) error {
 		metadata, err := GetMetadata(file)
 		if err != nil {
 			return err
 		}
 		if action == parser.ShowAction {
 			for _, m := range metadata {
-				Show(m)
+				Show(m, file, parsers)
 			}
 		} else if action == parser.ClearAction {
 			err = ClearMetadata(file)
 			if err != nil {
 				return err
 			}
-			fmt.Println("Metadata cleared")
+			output.Println(false, "Metadata cleared")
 		} else {
-			fmt.Printf("Unsupported action: %s\n", action)
+			output.Printf(false, "Unsupported action: %s\n", action)
 		}
 		return nil
 	},
 }
 
-func Show(m Metadata) {
-	fmt.Println("Info")
-	fmt.Println("====")
-	fmt.Printf("Filename    : %s\n", m.Info.Filename)
+func Show(m Metadata, file *os.File, parsers []parser.Parser) {
+	output.PrintHeader(false, "Info")
+	output.PrintForm(false, "Filename", m.Info.Filename, 13)
 	var dateStr string
 	if m.Info.DateUTC.Year() <= 1970 {
 		dateStr = ""
 	} else {
 		dateStr = m.Info.DateUTC.String()
 	}
-	fmt.Printf("Date        : %s\n", dateStr)
-	fmt.Printf("Title       : %s\n", m.Info.Title)
-	fmt.Printf("Muxing App  : %s\n", m.Info.MuxingApp)
-	fmt.Printf("Writing App : %s\n", m.Info.WritingApp)
-	fmt.Println()
+	output.PrintForm(false, "Date", dateStr, 13)
+	output.PrintForm(false, "Title", m.Info.Title, 13)
+	output.PrintForm(false, "Muxing App", m.Info.MuxingApp, 13)
+	output.PrintForm(false, "Writing App", m.Info.WritingApp, 13)
+	output.Println(false)
 
 	for _, t := range m.Tracks {
-		fmt.Printf("Track %d\n", t.Number)
-		fmt.Println("=========")
-		fmt.Printf("Name     : %s\n", t.Name)
-		fmt.Printf("Type     : %s\n", GetTrackType(t.Type))
-		fmt.Printf("Language : %s\n", t.Language)
-		fmt.Println()
+		output.PrintHeader(false, "Track %d", t.Number)
+		output.PrintForm(false, "Name", t.Name, 13)
+		output.PrintForm(false, "Type", GetTrackType(t.Type), 13)
+		output.PrintForm(false, "Language", t.Language, 13)
+		output.Println(false)
 	}
 
 	for _, a := range m.Attachments {
-		fmt.Println("Attachment")
-		fmt.Println("==========")
-		fmt.Printf("Name        : %s\n", a.Name)
-		fmt.Printf("Media Type  : %s\n", a.MediaType)
-		fmt.Printf("Description : %s\n", a.Description)
-		fmt.Println()
+		output.PrintHeader(false, "Attachment")
+		output.PrintForm(false, "Name", a.Name, 13)
+		output.PrintForm(false, "Media Type", a.MediaType, 13)
+		output.PrintForm(false, "Description", a.Description, 13)
+		output.Println(false)
+		parsed, err := parser.StartParsing(parsers, file, parser.ShowAction, a.DataAt)
+		if err != nil {
+			output.Printf(true, "Error while processing attachment: %s\n", err)
+		}
+		if !parsed {
+			output.Println(true, "Unsupported file type")
+		}
+		output.Println(false)
 	}
 
 	for _, t := range m.Tags {
 		if t.Name == "BPS" {
 			continue
 		}
-		fmt.Println("Tag")
-		fmt.Println("===")
-		fmt.Printf("Name        : %s\n", t.Name)
-		fmt.Printf("Target Type : %s\n", t.TargetType)
-		fmt.Printf("Language    : %s\n", t.Language)
-		fmt.Printf("Value       : %s\n", t.Value)
-		fmt.Println()
+		output.PrintHeader(false, "Tag")
+		output.PrintForm(false, "Name", t.Name, 13)
+		output.PrintForm(false, "Target Type", t.TargetType, 13)
+		output.PrintForm(false, "Language", t.Language, 13)
+		output.PrintForm(false, "Value", t.Value, 13)
+		output.Println(false)
 	}
 }
 
-func IsMkv(file *os.File) (bool, error) {
+func IsMkv(file *os.File, startOffset int64) (bool, error) {
 	magicBytes := make([]byte, 4)
-	_, err := file.ReadAt(magicBytes, 0)
+	_, err := file.ReadAt(magicBytes, startOffset)
 	if err != nil {
 		return false, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -359,6 +365,8 @@ func GetMetadata(file *os.File) ([]Metadata, error) {
 						Description: GetStringValue([]byte{0x46, 0x7E}, elements),
 						MediaType:   GetStringValue([]byte{0x46, 0x60}, elements),
 					}
+					attachmentData := SearchEBMLElements([]byte{0x46, 0x5C}, elements)
+					attachment.DataAt = attachmentData.DataAt
 					attachments = append(attachments, attachment)
 				}
 			}
@@ -405,7 +413,7 @@ func ClearMetadata(file *os.File) error {
 		}
 		e, _ := v.GetElements()
 
-		fmt.Println("Removing all values from Info elements...")
+		output.Println(false, "Removing all values from Info elements...")
 		infoElement := SearchEBMLElements([]byte{0x15, 0x49, 0xA9, 0x66}, e)
 		infoElements, _ := infoElement.GetElements()
 		err := ClearValue([]byte{0x73, 0x84}, infoElements)
@@ -456,6 +464,7 @@ type Attachment struct {
 	Name        string
 	MediaType   string
 	Description string
+	DataAt      int64
 }
 
 type Tag struct {
