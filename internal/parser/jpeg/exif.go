@@ -5,31 +5,44 @@ import (
 	"fmt"
 )
 
-func ParseExif(raw []byte) map[uint16]string {
+type IFD struct {
+	StartOffset uint32
+	Tags        map[uint16]string
+}
+
+func ParseExif(raw []byte) []IFD {
 	byteOrder := ByteOrder{
 		byteOrder: raw[0:2],
 	}
 	offsetIFD := byteOrder.getUint32(raw[4:8])
-	result := make(map[uint16]string)
+	var result []IFD
+	ifd := IFD{}
 	for {
-		i := offsetIFD
-		links, next := ParseIFD(result, raw, byteOrder, i)
+		ifd.StartOffset = offsetIFD
+		links, next := ParseIFD(&ifd, raw, byteOrder)
+		result = append(result, ifd)
 		for _, link := range links {
-			_, _ = ParseIFD(result, raw, byteOrder, link)
+			ifd = IFD{
+				StartOffset: link,
+			}
+			_, _ = ParseIFD(&ifd, raw, byteOrder)
+			result = append(result, ifd)
 		}
 		if next == 0 {
 			break
 		}
 		offsetIFD = next
+		ifd = IFD{}
 	}
 	return result
 }
 
-func ParseIFD(result map[uint16]string, raw []byte, byteOrder ByteOrder, startOffset uint32) ([]uint32, uint32) {
-	i := startOffset
+func ParseIFD(ifd *IFD, raw []byte, byteOrder ByteOrder) ([]uint32, uint32) {
+	i := ifd.StartOffset
 	numberOfTags := int(byteOrder.getUint16(raw[i : i+2]))
 	i += 2
 	links := make([]uint32, 0)
+	ifd.Tags = make(map[uint16]string)
 	for c := 0; c < numberOfTags; c++ {
 		tagId := byteOrder.getUint16(raw[i : i+2])
 		i += 2
@@ -47,9 +60,9 @@ func ParseIFD(result map[uint16]string, raw []byte, byteOrder ByteOrder, startOf
 				if int(end) > len(raw) {
 					continue
 				}
-				result[tagId] = string(raw[valueOffset:end])
+				ifd.Tags[tagId] = string(raw[valueOffset:end])
 			} else {
-				result[tagId] = fmt.Sprintf("%v", valueOffset)
+				ifd.Tags[tagId] = fmt.Sprintf("%v", valueOffset)
 			}
 		}
 	}

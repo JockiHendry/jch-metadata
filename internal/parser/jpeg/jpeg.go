@@ -2,12 +2,16 @@ package jpeg
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 var Parser = parser.Parser{
@@ -26,19 +30,21 @@ var Parser = parser.Parser{
 			output.PrintForm(startOffset > 0, "Has JFIF Thumbnail", fmt.Sprintf("%v", metadata.JFIFThumbnail), 20)
 			output.PrintForm(startOffset > 0, "Has JFXX Thumbnail", fmt.Sprintf("%v", metadata.JFXXThumbnail), 20)
 			output.Println(startOffset > 0)
-			if len(metadata.EXIFTags) > 0 {
-				output.PrintHeader(startOffset > 0, "EXIF Tags")
-				tags := make([]uint16, len(metadata.EXIFTags))
-				i := 0
-				for k := range metadata.EXIFTags {
-					tags[i] = k
-					i++
+			if len(metadata.IFDs) > 0 {
+				for _, ifd := range metadata.IFDs {
+					output.PrintHeader(startOffset > 0, "EXIF IFD Offset 0x%0X", ifd.StartOffset)
+					tags := make([]uint16, len(ifd.Tags))
+					i := 0
+					for k := range ifd.Tags {
+						tags[i] = k
+						i++
+					}
+					sort.Slice(tags, func(i, j int) bool { return tags[i] < tags[j] })
+					for _, t := range tags {
+						output.PrintForm(startOffset > 0, fmt.Sprintf("0x%04X", t), ifd.Tags[t], 10)
+					}
+					output.Println(startOffset > 0)
 				}
-				sort.Slice(tags, func(i, j int) bool { return tags[i] < tags[j] })
-				for _, t := range tags {
-					output.PrintForm(startOffset > 0, fmt.Sprintf("0x%04X", t), metadata.EXIFTags[t], 10)
-				}
-				output.Println(startOffset > 0)
 			}
 
 			output.PrintHeader(startOffset > 0, "XMP")
@@ -48,8 +54,8 @@ var Parser = parser.Parser{
 			}
 
 			for _, m := range metadata.UnsupportedMarkers {
-				output.PrintHeader(startOffset > 0, "Application Segment 0x%04X", m.GetMarker())
-				output.PrintHexDump(startOffset > 0, m.Raw.Bytes())
+				output.PrintHeader(startOffset > 0, "Application Segment 0x%04X", m.Marker)
+				output.PrintHexDump(startOffset > 0, m.Raw)
 				output.Println(startOffset > 0)
 			}
 			output.Println(startOffset > 0)
@@ -61,6 +67,26 @@ var Parser = parser.Parser{
 			output.PrintForm(startOffset > 0, "Dev Model", metadata.ICCProfile.DeviceModel, 18)
 			output.PrintForm(startOffset > 0, "Profile Creator", metadata.ICCProfile.ProfileCreator, 18)
 			output.PrintForm(startOffset > 0, "Copyright", metadata.ICCProfile.Copyright, 18)
+		} else if action == parser.ExtractAction {
+			thumbnailData, err := ExtractThumbnail(file, startOffset)
+			if err != nil {
+				return fmt.Errorf("error extracting thumbnail: %w", err)
+			}
+			if thumbnailData == nil {
+				output.Println(startOffset > 0, "No thumbnail to extract")
+			}
+			err = os.MkdirAll("output", os.ModePerm)
+			if err != nil {
+				return fmt.Errorf("error creating output directory: %w", err)
+			}
+			ext := filepath.Ext(file.Name())
+			basename := filepath.Base(strings.TrimSuffix(file.Name(), ext))
+			filename := filepath.Join("output", basename+"_thumbnail.jpeg")
+			err = os.WriteFile(filename, thumbnailData, os.ModePerm)
+			if err != nil {
+				return fmt.Errorf("error writing thumbnail: %w", err)
+			}
+			output.Printf(startOffset > 0, "Thumbnail has been extracted to %s\n", filename)
 		}
 		return nil
 	},
@@ -75,39 +101,37 @@ func IsJPEG(file *os.File, startOffset int64) (bool, error) {
 	return bytes.Equal(magicBytes, []byte{0xFF, 0xD8, 0xFF}), nil
 }
 
-func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationMarker, error) {
+func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationSegment, error) {
 	offset := startOffset
-	data := make([]byte, 512)
-	marked := byte(0)
-	var appMarker ApplicationMarker
-	var result []ApplicationMarker
+	var result []ApplicationSegment
+	appMarker := ApplicationSegment{
+		Marker: make([]byte, 2),
+	}
 	for {
-		_, err := file.ReadAt(data, offset)
+		_, err := file.ReadAt(appMarker.Marker, offset)
 		if err == io.EOF {
 			break
 		}
-		for _, b := range data {
-			if b == 0xFF {
-				marked = b
-				continue
-			} else if marked == 0xFF {
-				if b == 0x00 {
-					marked = 0
-					continue
-				}
-				marked = b
-				if appMarker.IsValid() {
-					result = append(result, appMarker)
-				}
-				appMarker = ApplicationMarker{}
-				appMarker.Raw.Grow(512)
-				appMarker.Raw.Write([]byte{0xFF, b})
-				continue
-			} else if marked >= 0xE0 && marked <= 0xEF {
-				appMarker.Raw.WriteByte(b)
+		if appMarker.Marker[0] == 0xFF && appMarker.Marker[1] >= 0xE0 && appMarker.Marker[1] <= 0xEF {
+			lengthRaw := make([]byte, 2)
+			_, err := file.ReadAt(lengthRaw, offset+2)
+			if err != nil {
+				return nil, err
 			}
+			appMarker.Length = binary.BigEndian.Uint16(lengthRaw)
+			appMarker.Raw = make([]byte, appMarker.Length+2)
+			_, err = file.ReadAt(appMarker.Raw, offset)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, appMarker)
+			offset += int64(2 + appMarker.Length)
+			appMarker = ApplicationSegment{
+				Marker: make([]byte, 2),
+			}
+		} else {
+			offset += 2
 		}
-		offset += 512
 	}
 	return result, nil
 }
@@ -123,11 +147,11 @@ func ParseFile(file *os.File, startOffset int64) (*Metadata, error) {
 	}
 	for _, m := range markers {
 		if m.IsJFIFSegment() {
-			result.JFIFThumbnail = m.Raw.Bytes()[16] > 0 && m.Raw.Bytes()[17] > 0
+			result.JFIFThumbnail = m.Raw[16] > 0 && m.Raw[17] > 0
 		} else if m.IsJFXXSegment() {
 			result.JFXXThumbnail = true
 		} else if m.IsEXIFSegment() {
-			result.EXIFTags = m.GetEXIFValues()
+			result.IFDs = m.GetIFDs()
 		} else if m.IsICCProfileSegment() {
 			result.ICCProfile = m.GetICCProfile()
 		} else if m.IsXMPSegment() {
@@ -141,111 +165,132 @@ func ParseFile(file *os.File, startOffset int64) (*Metadata, error) {
 	return &result, nil
 }
 
-type ApplicationMarker struct {
-	Raw bytes.Buffer
+func ExtractThumbnail(file *os.File, startOffset int64) ([]byte, error) {
+	markers, err := FindApplicationMarkers(file, startOffset)
+	if err != nil {
+		return nil, err
+	}
+	var exifSegment *ApplicationSegment
+	for _, m := range markers {
+		if m.IsEXIFSegment() {
+			exifSegment = &m
+			break
+		}
+	}
+	if exifSegment == nil {
+		return nil, nil
+	}
+	ifds := exifSegment.GetIFDs()
+	for _, ifd := range ifds {
+		if ifd.Tags[0x0103] == "6" {
+			offsetStr, exists := ifd.Tags[0x0201]
+			if !exists {
+				continue
+			}
+			offset, err := strconv.Atoi(offsetStr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse thumbnail offset [%s]: %w", offsetStr, err)
+			}
+			sizeStr, exists := ifd.Tags[0x0202]
+			if !exists {
+				continue
+			}
+			size, err := strconv.Atoi(sizeStr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse thumbnail size [%s]: %w", sizeStr, err)
+			}
+			start := offset + 10
+			return exifSegment.Raw[start : start+size], nil
+		}
+	}
+	return nil, nil
 }
 
-func (m *ApplicationMarker) IsValid() bool {
-	if m.Raw.Len() <= 2 {
-		return false
-	}
-	marker := m.GetMarker()
-	return marker[1] >= 0xE0 && marker[1] <= 0xEF
+type ApplicationSegment struct {
+	StartOffset int64
+	Marker      []byte
+	Length      uint16
+	Raw         []byte
 }
 
-func (m *ApplicationMarker) IsJFIFSegment() bool {
-	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE0}) {
+func (m *ApplicationSegment) IsJFIFSegment() bool {
+	if !bytes.Equal(m.Marker, []byte{0xFF, 0xE0}) {
 		return false
 	}
-	raw := m.Raw.Bytes()
-	if len(raw) < 9 {
+	if m.Length < 9 {
 		return false
 	}
-	if string(raw[4:8]) != "JFIF" {
+	if string(m.Raw[4:8]) != "JFIF" {
 		return false
 	}
 	return true
 }
 
-func (m *ApplicationMarker) IsJFXXSegment() bool {
-	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE0}) {
+func (m *ApplicationSegment) IsJFXXSegment() bool {
+	if !bytes.Equal(m.Marker, []byte{0xFF, 0xE0}) {
 		return false
 	}
-	raw := m.Raw.Bytes()
-	if len(raw) < 9 {
+	if m.Length < 9 {
 		return false
 	}
-	return string(raw[4:8]) == "JFXX"
+	return string(m.Raw[4:8]) == "JFXX"
 }
 
-func (m *ApplicationMarker) IsEXIFSegment() bool {
-	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE1}) {
+func (m *ApplicationSegment) IsEXIFSegment() bool {
+	if !bytes.Equal(m.Marker, []byte{0xFF, 0xE1}) {
 		return false
 	}
-	raw := m.Raw.Bytes()
-	if len(raw) < 11 {
+	if m.Length < 11 {
 		return false
 	}
-	return bytes.Equal(raw[4:10], []byte{0x45, 0x78, 0x69, 0x66, 0x00, 0x00})
+	return bytes.Equal(m.Raw[4:10], []byte{0x45, 0x78, 0x69, 0x66, 0x00, 0x00})
 }
 
-func (m *ApplicationMarker) IsICCProfileSegment() bool {
-	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE2}) {
+func (m *ApplicationSegment) IsICCProfileSegment() bool {
+	if !bytes.Equal(m.Marker, []byte{0xFF, 0xE2}) {
 		return false
 	}
-	raw := m.Raw.Bytes()
-	return string(raw[4:15]) == "ICC_PROFILE"
+	return string(m.Raw[4:15]) == "ICC_PROFILE"
 }
 
-func (m *ApplicationMarker) IsXMPSegment() bool {
-	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE1}) {
+func (m *ApplicationSegment) IsXMPSegment() bool {
+	if !bytes.Equal(m.Marker, []byte{0xFF, 0xE1}) {
 		return false
 	}
-	raw := m.Raw.Bytes()
-	return string(raw[4:32]) == "http://ns.adobe.com/xap/1.0/"
+	return string(m.Raw[4:32]) == "http://ns.adobe.com/xap/1.0/"
 }
 
-func (m *ApplicationMarker) IsExtendedXMPSegment() bool {
-	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE1}) {
+func (m *ApplicationSegment) IsExtendedXMPSegment() bool {
+	if !bytes.Equal(m.Marker, []byte{0xFF, 0xE1}) {
 		return false
 	}
-	raw := m.Raw.Bytes()
-	return string(raw[4:38]) == "http://ns.adobe.com/xmp/extension/"
+	return string(m.Raw[4:38]) == "http://ns.adobe.com/xmp/extension/"
 }
 
-func (m *ApplicationMarker) GetEXIFValues() map[uint16]string {
-	raw := m.Raw.Bytes()
-	return ParseExif(raw[10:])
+func (m *ApplicationSegment) GetIFDs() []IFD {
+	return ParseExif(m.Raw[10:])
 }
 
-func (m *ApplicationMarker) GetICCProfile() Profile {
-	raw := m.Raw.Bytes()
-	if raw[16] != 1 {
+func (m *ApplicationSegment) GetICCProfile() Profile {
+	if m.Raw[16] != 1 {
 		return Profile{}
 	}
-	return ParseICC(raw[18:])
+	return ParseICC(m.Raw[18:])
 }
 
-func (m *ApplicationMarker) GetXMP() string {
-	raw := m.Raw.Bytes()
-	return string(raw[33:])
+func (m *ApplicationSegment) GetXMP() string {
+	return string(m.Raw[33:])
 }
 
-func (m *ApplicationMarker) GetExtendedXMP() string {
-	raw := m.Raw.Bytes()
-	return string(raw[79:])
-}
-
-func (m *ApplicationMarker) GetMarker() []byte {
-	marker := m.Raw.Bytes()
-	return marker[0:2]
+func (m *ApplicationSegment) GetExtendedXMP() string {
+	return string(m.Raw[79:])
 }
 
 type Metadata struct {
 	JFIFThumbnail      bool
 	JFXXThumbnail      bool
-	EXIFTags           map[uint16]string
+	IFDs               []IFD
 	ICCProfile         Profile
-	UnsupportedMarkers []ApplicationMarker
+	UnsupportedMarkers []ApplicationSegment
 	XMP                []string
 }

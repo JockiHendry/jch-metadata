@@ -114,6 +114,16 @@ Language     :
 Value        : 00:01:27.336000000
 ```
 
+Some file formats may contain nested files, for example, a single MKV file can have one or more attachments (such as album cover image) and a JPEG file may contain unedited thumbnail image.  To extract such nested files, run the following command:
+
+```
+$ jch-metadata -f test1.jpeg -a extract
+
+Opening file test1.jpeg
+File type is JPEG
+
+Thumbnail has been extracted to output/test1_thumbnail.jpeg
+```
 
 To remove metadata for a file, run the following command:
 

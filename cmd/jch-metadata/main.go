@@ -23,7 +23,7 @@ var parsers = []parser.Parser{
 
 func main() {
 	flag.StringVar(&inputFilename, "f", "", "Input filename")
-	flag.StringVar(&actionArg, "a", "show", "Action to perform: show, clear")
+	flag.StringVar(&actionArg, "a", "show", "Action to perform: show, clear, extract")
 	flag.Parse()
 	if inputFilename == "" {
 		fmt.Println("Invalid input filename")

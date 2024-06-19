@@ -35,20 +35,17 @@ func TestFindApplicationMarkers(t *testing.T) {
 		t.Fatalf("Error reading file: %s", err)
 	}
 	result, err := jpeg.FindApplicationMarkers(f, 0)
-	if len(result) != 4 {
+	if len(result) != 3 {
 		t.Fatalf("Unexpected result size: %d", len(result))
 	}
-	if !bytes.Equal(result[0].GetMarker(), []byte{0xFF, 0xE0}) {
-		t.Fatalf("Unexpected marker: %v", result[0].GetMarker())
+	if !bytes.Equal(result[0].Marker, []byte{0xFF, 0xE0}) {
+		t.Fatalf("Unexpected marker: %v", result[0].Marker)
 	}
-	if !bytes.Equal(result[1].GetMarker(), []byte{0xFF, 0xE1}) {
-		t.Fatalf("Unexpected marker: %v", result[1].GetMarker())
+	if !bytes.Equal(result[1].Marker, []byte{0xFF, 0xE1}) {
+		t.Fatalf("Unexpected marker: %v", result[1].Marker)
 	}
-	if !bytes.Equal(result[2].GetMarker(), []byte{0xFF, 0xE0}) {
-		t.Fatalf("Unexpected marker: %v", result[2].GetMarker())
-	}
-	if !bytes.Equal(result[3].GetMarker(), []byte{0xFF, 0xE2}) {
-		t.Fatalf("Unexpected marker: %v", result[3].GetMarker())
+	if !bytes.Equal(result[2].Marker, []byte{0xFF, 0xE2}) {
+		t.Fatalf("Unexpected marker: %v", result[3].Marker)
 	}
 }
 
@@ -67,14 +64,23 @@ func TestParseJPEG(t *testing.T) {
 	if result.JFXXThumbnail {
 		t.Fatalf("Image doesn't have JFXX Thumbnail")
 	}
-	if len(result.EXIFTags) != 40 {
-		t.Fatalf("Unexpected number of EXIF tags: %d", len(result.EXIFTags))
+	if len(result.IFDs) != 3 {
+		t.Fatalf("Unexpected number of IFDs: %d", len(result.IFDs))
 	}
-	if result.EXIFTags[0x110] != "Canon EOS 40D" {
-		t.Fatalf("Unexpected value for tag ID: %s", result.EXIFTags[0x110])
+	if len(result.IFDs[0].Tags) != 10 {
+		t.Fatalf("Unexpected number of EXIF tags in IFD 0: %d", len(result.IFDs[0].Tags))
 	}
-	if result.EXIFTags[0x131] != "GIMP 2.4.5" {
-		t.Fatalf("Unexpected value for tag ID: %s", result.EXIFTags[0x131])
+	if len(result.IFDs[1].Tags) != 27 {
+		t.Fatalf("Unexpected number of EXIF tags in IFD 1: %d", len(result.IFDs[1].Tags))
+	}
+	if len(result.IFDs[2].Tags) != 6 {
+		t.Fatalf("Unexpected number of EXIF tags in IFD 2: %d", len(result.IFDs[2].Tags))
+	}
+	if result.IFDs[0].Tags[0x110] != "Canon EOS 40D" {
+		t.Fatalf("Unexpected value for tag ID: %s", result.IFDs[0].Tags[0x110])
+	}
+	if result.IFDs[0].Tags[0x131] != "GIMP 2.4.5" {
+		t.Fatalf("Unexpected value for tag ID: %s", result.IFDs[0].Tags[0x131])
 	}
 	if len(result.UnsupportedMarkers) != 0 {
 		t.Fatalf("Unexpected number of unsupported markers: %d", len(result.UnsupportedMarkers))
@@ -108,13 +114,30 @@ func TestParseXMP(t *testing.T) {
 		t.Fatalf("Error reading file: %s", err)
 	}
 	result, err := jpeg.ParseFile(f, 0)
-	if len(result.XMP) != 2 {
+	if len(result.XMP) != 22 {
 		t.Fatalf("Invalid XMP chunks: %d", len(result.XMP))
 	}
 	if len(result.XMP[0]) != 838 {
 		t.Fatalf("Invalid size for first XMP chunk: %d", len(result.XMP[0]))
 	}
-	if len(result.XMP[1]) != 52041 {
-		t.Fatalf("Invalid size for second XMP chunk: %d", len(result.XMP[0]))
+	if len(result.XMP[1]) != 65383 {
+		t.Fatalf("Invalid size for second XMP chunk: %d", len(result.XMP[1]))
+	}
+}
+
+func TestExtract(t *testing.T) {
+	f, err := os.Open("internal/parser/test/test1.jpeg")
+	if err != nil {
+		t.Fatalf("Error reading file: %s", err)
+	}
+	result, err := jpeg.ExtractThumbnail(f, 0)
+	if err != nil {
+		t.Fatalf("Error extracting thumbnail: %s", err)
+	}
+	if len(result) == 0 {
+		t.Fatalf("Unexpected thumbnail size: %d", len(result))
+	}
+	if result[0] != 0xFF && result[1] != 0xD8 {
+		t.Fatalf("Invalid thumbnail")
 	}
 }

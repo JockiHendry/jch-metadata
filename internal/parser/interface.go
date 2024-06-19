@@ -13,13 +13,16 @@ func ConvertAction(actionArgument string) (Action, error) {
 		return ShowAction, nil
 	} else if actionArgument == string(ClearAction) {
 		return ClearAction, nil
+	} else if actionArgument == string(ExtractAction) {
+		return ExtractAction, nil
 	}
 	return "", fmt.Errorf("invalid action: %s", actionArgument)
 }
 
 const (
-	ShowAction  Action = "show"
-	ClearAction Action = "clear"
+	ShowAction    Action = "show"
+	ClearAction   Action = "clear"
+	ExtractAction Action = "extract"
 )
 
 type Parser struct {
