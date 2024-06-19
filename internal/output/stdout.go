@@ -1,6 +1,9 @@
 package output
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func Printf(indented bool, format string, a ...any) {
 	if indented {
@@ -54,6 +57,20 @@ func PrintHexDump(indented bool, value []byte) {
 				}
 
 			}
+		}
+		fmt.Println()
+	}
+}
+
+func PrintMultiline(indented bool, value string) {
+	lines := strings.Split(value, "\n")
+	for _, line := range lines {
+		if indented {
+			fmt.Printf("  ")
+		}
+		fmt.Printf("%.120s", line)
+		if len(line) > 120 {
+			fmt.Printf("...")
 		}
 		fmt.Println()
 	}

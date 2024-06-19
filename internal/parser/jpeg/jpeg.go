@@ -40,6 +40,13 @@ var Parser = parser.Parser{
 				}
 				output.Println(startOffset > 0)
 			}
+
+			output.PrintHeader(startOffset > 0, "XMP")
+			for _, s := range metadata.XMP {
+				output.PrintMultiline(startOffset > 0, s)
+				output.Println(startOffset > 0)
+			}
+
 			for _, m := range metadata.UnsupportedMarkers {
 				output.PrintHeader(startOffset > 0, "Application Segment 0x%04X", m.GetMarker())
 				output.PrintHexDump(startOffset > 0, m.Raw.Bytes())
@@ -123,6 +130,10 @@ func ParseFile(file *os.File, startOffset int64) (*Metadata, error) {
 			result.EXIFTags = m.GetEXIFValues()
 		} else if m.IsICCProfileSegment() {
 			result.ICCProfile = m.GetICCProfile()
+		} else if m.IsXMPSegment() {
+			result.XMP = append(result.XMP, m.GetXMP())
+		} else if m.IsExtendedXMPSegment() {
+			result.XMP = append(result.XMP, m.GetExtendedXMP())
 		} else {
 			result.UnsupportedMarkers = append(result.UnsupportedMarkers, m)
 		}
@@ -186,6 +197,22 @@ func (m *ApplicationMarker) IsICCProfileSegment() bool {
 	return string(raw[4:15]) == "ICC_PROFILE"
 }
 
+func (m *ApplicationMarker) IsXMPSegment() bool {
+	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE1}) {
+		return false
+	}
+	raw := m.Raw.Bytes()
+	return string(raw[4:32]) == "http://ns.adobe.com/xap/1.0/"
+}
+
+func (m *ApplicationMarker) IsExtendedXMPSegment() bool {
+	if !bytes.Equal(m.GetMarker(), []byte{0xFF, 0xE1}) {
+		return false
+	}
+	raw := m.Raw.Bytes()
+	return string(raw[4:38]) == "http://ns.adobe.com/xmp/extension/"
+}
+
 func (m *ApplicationMarker) GetEXIFValues() map[uint16]string {
 	raw := m.Raw.Bytes()
 	return ParseExif(raw[10:])
@@ -199,6 +226,16 @@ func (m *ApplicationMarker) GetICCProfile() Profile {
 	return ParseICC(raw[18:])
 }
 
+func (m *ApplicationMarker) GetXMP() string {
+	raw := m.Raw.Bytes()
+	return string(raw[33:])
+}
+
+func (m *ApplicationMarker) GetExtendedXMP() string {
+	raw := m.Raw.Bytes()
+	return string(raw[79:])
+}
+
 func (m *ApplicationMarker) GetMarker() []byte {
 	marker := m.Raw.Bytes()
 	return marker[0:2]
@@ -210,4 +247,5 @@ type Metadata struct {
 	EXIFTags           map[uint16]string
 	ICCProfile         Profile
 	UnsupportedMarkers []ApplicationMarker
+	XMP                []string
 }

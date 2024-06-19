@@ -101,3 +101,20 @@ func TestParseJPEG(t *testing.T) {
 		t.Fatalf("Unexpected Copyright: %s", result.ICCProfile.Copyright)
 	}
 }
+
+func TestParseXMP(t *testing.T) {
+	f, err := os.Open("internal/parser/test/test2.jpeg")
+	if err != nil {
+		t.Fatalf("Error reading file: %s", err)
+	}
+	result, err := jpeg.ParseFile(f, 0)
+	if len(result.XMP) != 2 {
+		t.Fatalf("Invalid XMP chunks: %d", len(result.XMP))
+	}
+	if len(result.XMP[0]) != 838 {
+		t.Fatalf("Invalid size for first XMP chunk: %d", len(result.XMP[0]))
+	}
+	if len(result.XMP[1]) != 52041 {
+		t.Fatalf("Invalid size for second XMP chunk: %d", len(result.XMP[0]))
+	}
+}
