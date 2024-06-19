@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"jch-metadata/internal/parser"
 	"jch-metadata/internal/parser/flac"
+	"jch-metadata/internal/parser/jpeg"
 	"jch-metadata/internal/parser/mkv"
 	"jch-metadata/internal/parser/png"
 	"os"
@@ -17,6 +18,7 @@ var parsers = []parser.Parser{
 	flac.Parser,
 	mkv.Parser,
 	png.Parser,
+	jpeg.Parser,
 }
 
 func main() {
