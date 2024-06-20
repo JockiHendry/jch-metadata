@@ -7,6 +7,8 @@ import (
 	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -34,6 +36,16 @@ var Parser = parser.Parser{
 				return err
 			}
 			output.Println(false, "Metadata cleared")
+		} else if action == parser.ExtractAction {
+			for _, m := range metadata {
+				for _, a := range m.Attachments {
+					output.Printf(false, "Extracting attachment %s...", a.Name)
+					err = ExtractAttachment(file, a)
+					if err != nil {
+						return err
+					}
+				}
+			}
 		} else {
 			output.Printf(false, "Unsupported action: %s\n", action)
 		}
@@ -362,10 +374,11 @@ func GetMetadata(file *os.File) ([]Metadata, error) {
 		attachmentElement := SearchEBMLElements([]byte{0x19, 0x41, 0xA4, 0x69}, e)
 		if attachmentElement != nil {
 			attachmentsElements, _ := attachmentElement.GetElements()
-			for _, a := range attachmentsElements {
+			for i, a := range attachmentsElements {
 				if bytes.Equal(a.ElementID, []byte{0x61, 0xA7}) {
 					elements, _ := a.GetElements()
 					attachment := Attachment{
+						Index:       i,
 						Name:        GetStringValue([]byte{0x46, 0x6E}, elements),
 						Description: GetStringValue([]byte{0x46, 0x7E}, elements),
 						MediaType:   GetStringValue([]byte{0x46, 0x60}, elements),
@@ -446,6 +459,33 @@ func ClearMetadata(file *os.File) error {
 	return nil
 }
 
+func ExtractAttachment(file *os.File, attachment Attachment) error {
+	data := make([]byte, attachment.Size)
+	_, err := file.ReadAt(data, attachment.DataAt)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll("output", os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("error creating output directory: %w", err)
+	}
+	ext := "raw"
+	if attachment.MediaType != "" {
+		m := strings.Split(attachment.MediaType, "/")
+		if len(m) >= 2 {
+			ext = m[1]
+		}
+	}
+	basename := filepath.Base(strings.TrimSuffix(file.Name(), ".mkv"))
+	filename := filepath.Join("output", fmt.Sprintf("%s_attachment_%02d.%s", basename, attachment.Index, ext))
+	err = os.WriteFile(filename, data, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("error writing attachment %02d: %w", attachment.Index, err)
+	}
+	output.Printf(false, "Attachment has been extracted to %s\n", filename)
+	return nil
+}
+
 type Metadata struct {
 	Info struct {
 		Filename   string
@@ -467,6 +507,7 @@ type Track struct {
 }
 
 type Attachment struct {
+	Index       int
 	Name        string
 	MediaType   string
 	Description string
