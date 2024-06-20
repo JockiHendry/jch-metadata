@@ -34,7 +34,7 @@ func TestFindApplicationMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := jpeg.FindApplicationMarkers(f, 0)
+	result, err := jpeg.FindApplicationSegments(f, 0)
 	if len(result) != 3 {
 		t.Fatalf("Unexpected result size: %d", len(result))
 	}

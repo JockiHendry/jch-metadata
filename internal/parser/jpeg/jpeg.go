@@ -68,6 +68,20 @@ var Parser = parser.Parser{
 			output.PrintForm(startOffset > 0, "Dev Model", metadata.ICCProfile.DeviceModel, 18)
 			output.PrintForm(startOffset > 0, "Profile Creator", metadata.ICCProfile.ProfileCreator, 18)
 			output.PrintForm(startOffset > 0, "Copyright", metadata.ICCProfile.Copyright, 18)
+		} else if action == parser.ClearAction {
+			appSegments, err := FindApplicationSegments(file, startOffset)
+			if err != nil {
+				return err
+			}
+			if len(appSegments) == 0 {
+				fmt.Println("There is no application segments to remove!")
+				return nil
+			}
+			err = RemoveApplicationSegment(file, appSegments, length)
+			if err != nil {
+				return err
+			}
+			fmt.Println("Application segments has been removed!")
 		} else if action == parser.ExtractAction {
 			thumbnailData, err := ExtractThumbnail(file, startOffset)
 			if err != nil {
@@ -102,7 +116,7 @@ func IsJPEG(file *os.File, startOffset int64) (bool, error) {
 	return bytes.Equal(magicBytes, []byte{0xFF, 0xD8, 0xFF}), nil
 }
 
-func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationSegment, error) {
+func FindApplicationSegments(file *os.File, startOffset int64) ([]ApplicationSegment, error) {
 	offset := startOffset
 	reader := bufio.NewReader(file)
 	_, err := reader.Discard(int(offset))
@@ -110,38 +124,42 @@ func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationSegm
 		return nil, err
 	}
 	var result []ApplicationSegment
-	appMarker := ApplicationSegment{
+	appSegment := ApplicationSegment{
 		Marker: make([]byte, 2),
 	}
-	for {
-		_, err = io.ReadFull(reader, appMarker.Marker)
+	for i := int64(0); ; {
+		_, err = io.ReadFull(reader, appSegment.Marker)
 		if err == io.EOF {
 			break
 		}
-		if appMarker.Marker[0] == 0xFF && appMarker.Marker[1] == 0xD9 {
+		i += 2
+		if appSegment.Marker[0] == 0xFF && appSegment.Marker[1] == 0xD9 {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
-		if appMarker.Marker[0] == 0xFF && appMarker.Marker[1] >= 0xE0 && appMarker.Marker[1] <= 0xEF {
+		if appSegment.Marker[0] == 0xFF && appSegment.Marker[1] >= 0xE0 && appSegment.Marker[1] <= 0xEF {
+			appSegment.StartOffset = i - 2
 			lengthRaw := make([]byte, 2)
 			_, err = io.ReadFull(reader, lengthRaw)
 			if err != nil {
 				return nil, err
 			}
-			appMarker.Length = binary.BigEndian.Uint16(lengthRaw)
-			appMarker.Raw = make([]byte, appMarker.Length+2)
-			copy(appMarker.Raw, appMarker.Marker)
-			if appMarker.Length > 0 {
-				copy(appMarker.Raw[2:], lengthRaw)
+			i += 2
+			appSegment.Length = binary.BigEndian.Uint16(lengthRaw)
+			appSegment.Raw = make([]byte, appSegment.Length+2)
+			copy(appSegment.Raw, appSegment.Marker)
+			if appSegment.Length > 0 {
+				copy(appSegment.Raw[2:], lengthRaw)
 			}
-			_, err = io.ReadFull(reader, appMarker.Raw[4:])
+			_, err = io.ReadFull(reader, appSegment.Raw[4:])
 			if err != nil {
 				return nil, err
 			}
-			result = append(result, appMarker)
-			appMarker = ApplicationSegment{
+			i += int64(appSegment.Length) - 2
+			result = append(result, appSegment)
+			appSegment = ApplicationSegment{
 				Marker: make([]byte, 2),
 			}
 		}
@@ -150,7 +168,7 @@ func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationSegm
 }
 
 func ParseFile(file *os.File, startOffset int64) (*Metadata, error) {
-	markers, err := FindApplicationMarkers(file, startOffset)
+	markers, err := FindApplicationSegments(file, startOffset)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +197,7 @@ func ParseFile(file *os.File, startOffset int64) (*Metadata, error) {
 }
 
 func ExtractThumbnail(file *os.File, startOffset int64) ([]byte, error) {
-	markers, err := FindApplicationMarkers(file, startOffset)
+	markers, err := FindApplicationSegments(file, startOffset)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +235,56 @@ func ExtractThumbnail(file *os.File, startOffset int64) ([]byte, error) {
 		}
 	}
 	return nil, nil
+}
+
+func RemoveApplicationSegment(file *os.File, appSegments []ApplicationSegment, length int64) error {
+	tempFile, err := os.CreateTemp("", "jch_metadata_tmp_*")
+	if err != nil {
+		return err
+	}
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(file)
+	writer := bufio.NewWriter(tempFile)
+	for i := int64(0); i < length; i++ {
+		isAppSegment := false
+		for _, a := range appSegments {
+			if i >= a.StartOffset && i < (a.StartOffset+int64(a.Length+2)) {
+				isAppSegment = true
+				break
+			}
+		}
+		if isAppSegment {
+			_, err := reader.Discard(1)
+			if err != nil {
+				return err
+			}
+		} else {
+			b, err := reader.ReadByte()
+			if err != nil {
+				return err
+			}
+			err = writer.WriteByte(b)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	err = writer.Flush()
+	if err != nil {
+		return fmt.Errorf("error flushing temporary file: %w", err)
+	}
+	err = tempFile.Close()
+	if err != nil {
+		return fmt.Errorf("error closing temporary file: %w", err)
+	}
+	err = os.Rename(tempFile.Name(), file.Name())
+	if err != nil {
+		return fmt.Errorf("error renaming file: %w", err)
+	}
+	return nil
 }
 
 type ApplicationSegment struct {
