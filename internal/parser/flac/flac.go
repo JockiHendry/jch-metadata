@@ -12,10 +12,10 @@ import (
 var Parser = parser.Parser{
 	Name:      "FLAC",
 	Container: false,
-	Support: func(file *os.File, startOffset int64) (bool, error) {
+	Support: func(file *os.File, startOffset int64, length int64) (bool, error) {
 		return IsFLAC(file, startOffset)
 	},
-	Handle: func(file *os.File, action parser.Action, startOffset int64, parsers []parser.Parser) error {
+	Handle: func(file *os.File, action parser.Action, startOffset int64, length int64, parsers []parser.Parser) error {
 		metadata, err := GetMetadata(file, startOffset)
 		if err != nil {
 			return err

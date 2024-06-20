@@ -13,17 +13,20 @@ import (
 var Parser = parser.Parser{
 	Name:      "Mkv (Matroska)",
 	Container: true,
-	Support: func(file *os.File, startOffset int64) (bool, error) {
+	Support: func(file *os.File, startOffset int64, length int64) (bool, error) {
 		return IsMkv(file, startOffset)
 	},
-	Handle: func(file *os.File, action parser.Action, startOffset int64, parsers []parser.Parser) error {
+	Handle: func(file *os.File, action parser.Action, startOffset int64, length int64, parsers []parser.Parser) error {
 		metadata, err := GetMetadata(file)
 		if err != nil {
 			return err
 		}
 		if action == parser.ShowAction {
 			for _, m := range metadata {
-				Show(m, file, parsers)
+				err := Show(m, file, parsers)
+				if err != nil {
+					return err
+				}
 			}
 		} else if action == parser.ClearAction {
 			err = ClearMetadata(file)
@@ -38,7 +41,7 @@ var Parser = parser.Parser{
 	},
 }
 
-func Show(m Metadata, file *os.File, parsers []parser.Parser) {
+func Show(m Metadata, file *os.File, parsers []parser.Parser) error {
 	output.PrintHeader(false, "Info")
 	output.PrintForm(false, "Filename", m.Info.Filename, 13)
 	var dateStr string
@@ -67,9 +70,9 @@ func Show(m Metadata, file *os.File, parsers []parser.Parser) {
 		output.PrintForm(false, "Media Type", a.MediaType, 13)
 		output.PrintForm(false, "Description", a.Description, 13)
 		output.Println(false)
-		parsed, err := parser.StartParsing(parsers, file, parser.ShowAction, a.DataAt)
+		parsed, err := parser.StartParsing(parsers, file, parser.ShowAction, a.DataAt, a.Size)
 		if err != nil {
-			output.Printf(true, "Error while processing attachment: %s\n", err)
+			return fmt.Errorf("error while processing attachment [%s]: %w", a.Name, err)
 		}
 		if !parsed {
 			output.Println(true, "Unsupported file type")
@@ -88,6 +91,8 @@ func Show(m Metadata, file *os.File, parsers []parser.Parser) {
 		output.PrintForm(false, "Value", t.Value, 13)
 		output.Println(false)
 	}
+
+	return nil
 }
 
 func IsMkv(file *os.File, startOffset int64) (bool, error) {
@@ -367,6 +372,7 @@ func GetMetadata(file *os.File) ([]Metadata, error) {
 					}
 					attachmentData := SearchEBMLElements([]byte{0x46, 0x5C}, elements)
 					attachment.DataAt = attachmentData.DataAt
+					attachment.Size = int64(attachmentData.Size)
 					attachments = append(attachments, attachment)
 				}
 			}
@@ -465,6 +471,7 @@ type Attachment struct {
 	MediaType   string
 	Description string
 	DataAt      int64
+	Size        int64
 }
 
 type Tag struct {

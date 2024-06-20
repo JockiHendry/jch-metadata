@@ -34,7 +34,11 @@ func TestGetChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	chunks, err := png.GetChunks(f, 0)
+	fileInfo, _ := f.Stat()
+	if err != nil {
+		t.Fatalf("Error reading file stat")
+	}
+	chunks, err := png.GetChunks(f, 0, fileInfo.Size())
 	if err != nil {
 		t.Fatalf("Error getting chunks: %s", err)
 	}
@@ -57,7 +61,11 @@ func TestGetTextData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}
-	result, err := png.GetTextData(f, 0)
+	fileInfo, _ := f.Stat()
+	if err != nil {
+		t.Fatalf("Error reading file stat")
+	}
+	result, err := png.GetTextData(f, 0, fileInfo.Size())
 	if err != nil {
 		t.Fatalf("Error reading file: %s", err)
 	}

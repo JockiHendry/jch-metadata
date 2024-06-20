@@ -18,10 +18,10 @@ import (
 var Parser = parser.Parser{
 	Name:      "JPEG",
 	Container: false,
-	Support: func(file *os.File, startOffset int64) (bool, error) {
+	Support: func(file *os.File, startOffset int64, length int64) (bool, error) {
 		return IsJPEG(file, startOffset)
 	},
-	Handle: func(file *os.File, action parser.Action, startOffset int64, parsers []parser.Parser) error {
+	Handle: func(file *os.File, action parser.Action, startOffset int64, length int64, parsers []parser.Parser) error {
 		if action == parser.ShowAction {
 			metadata, err := ParseFile(file, startOffset)
 			if err != nil {
@@ -118,6 +118,9 @@ func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationSegm
 		if err == io.EOF {
 			break
 		}
+		if appMarker.Marker[0] == 0xFF && appMarker.Marker[1] == 0xD9 {
+			break
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +133,9 @@ func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationSegm
 			appMarker.Length = binary.BigEndian.Uint16(lengthRaw)
 			appMarker.Raw = make([]byte, appMarker.Length+2)
 			copy(appMarker.Raw, appMarker.Marker)
-			copy(appMarker.Raw[2:], lengthRaw)
+			if appMarker.Length > 0 {
+				copy(appMarker.Raw[2:], lengthRaw)
+			}
 			_, err = io.ReadFull(reader, appMarker.Raw[4:])
 			if err != nil {
 				return nil, err

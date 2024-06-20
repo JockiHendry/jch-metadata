@@ -28,17 +28,17 @@ const (
 type Parser struct {
 	Name      string
 	Container bool
-	Support   func(file *os.File, startOffset int64) (bool, error)
-	Handle    func(file *os.File, action Action, startOffset int64, parsers []Parser) error
+	Support   func(file *os.File, startOffset int64, length int64) (bool, error)
+	Handle    func(file *os.File, action Action, startOffset int64, length int64, parsers []Parser) error
 }
 
-func StartParsing(parsers []Parser, file *os.File, action Action, startOffset int64) (bool, error) {
+func StartParsing(parsers []Parser, file *os.File, action Action, startOffset int64, length int64) (bool, error) {
 	parsed := false
 	for _, p := range parsers {
 		if startOffset > 0 && p.Container {
 			continue
 		}
-		supported, err := p.Support(file, startOffset)
+		supported, err := p.Support(file, startOffset, length)
 		if err != nil {
 			return false, err
 		}
@@ -46,7 +46,7 @@ func StartParsing(parsers []Parser, file *os.File, action Action, startOffset in
 			continue
 		}
 		output.Printf(startOffset > 0, "File type is %s\n\n", p.Name)
-		err = p.Handle(file, action, startOffset, parsers)
+		err = p.Handle(file, action, startOffset, length, parsers)
 		if err != nil {
 			output.Printf(startOffset > 0, "Error handling file: %s", err)
 			return false, err

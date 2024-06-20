@@ -1,7 +1,11 @@
 package test
 
 import (
+	"jch-metadata/internal/parser"
+	"jch-metadata/internal/parser/flac"
+	"jch-metadata/internal/parser/jpeg"
 	"jch-metadata/internal/parser/mkv"
+	"jch-metadata/internal/parser/png"
 	"os"
 	"testing"
 )
@@ -198,5 +202,21 @@ func TestGetMetadata(t *testing.T) {
 	}
 	if metadata[0].Info.WritingApp != "mkclean 0.5.5 ru from libebml v1.0.0 + libmatroska v1.0.0 + mkvmerge v4.1.1 ('Bouncin' Back') built on Jul  3 2010 22:54:08" {
 		t.Fatalf("Expected WritingApp to be 'mkclean 0.5.5 ru from libebml v1.0.0 + libmatroska v1.0.0 + mkvmerge v4.1.1 ('Bouncin' Back') built on Jul  3 2010 22:54:08' but found %s", metadata[0].Info.WritingApp)
+	}
+}
+
+func TestHandleAttachments(t *testing.T) {
+	f, err := os.Open("internal/parser/test/test2.mkv")
+	if err != nil {
+		t.Fatalf("Error reading file: %s", err)
+	}
+	fileInfo, _ := f.Stat()
+	if err != nil {
+		t.Fatalf("Error reading file stat")
+	}
+	var parsers = []parser.Parser{flac.Parser, png.Parser, jpeg.Parser}
+	err = mkv.Parser.Handle(f, parser.ShowAction, 0, fileInfo.Size(), parsers)
+	if err != nil {
+		t.Fatalf("Unexpected error: %s", err)
 	}
 }

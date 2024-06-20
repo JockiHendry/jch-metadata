@@ -46,7 +46,11 @@ func main() {
 		fmt.Println("Error opening file:", err)
 		return
 	}
-	parsed, err := parser.StartParsing(parsers, file, action, 0)
+	fileInfo, err := file.Stat()
+	if err != nil {
+		fmt.Println("Error retrieving file stat:", err)
+	}
+	parsed, err := parser.StartParsing(parsers, file, action, 0, fileInfo.Size())
 	if err != nil {
 		fmt.Println("Error handling file:", err)
 		return

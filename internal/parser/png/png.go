@@ -13,12 +13,12 @@ import (
 var Parser = parser.Parser{
 	Name:      "PNG",
 	Container: false,
-	Support: func(file *os.File, startOffset int64) (bool, error) {
+	Support: func(file *os.File, startOffset int64, length int64) (bool, error) {
 		return IsPNG(file, startOffset)
 	},
-	Handle: func(file *os.File, action parser.Action, startOffset int64, parsers []parser.Parser) error {
+	Handle: func(file *os.File, action parser.Action, startOffset int64, length int64, parsers []parser.Parser) error {
 		if action == parser.ShowAction {
-			textData, err := GetTextData(file, startOffset)
+			textData, err := GetTextData(file, startOffset, length)
 			if err != nil {
 				return err
 			}
@@ -36,7 +36,7 @@ var Parser = parser.Parser{
 				output.PrintForm(startOffset > 0, k, v, width)
 			}
 		} else if action == parser.ClearAction {
-			textData, err := GetTextData(file, startOffset)
+			textData, err := GetTextData(file, startOffset, length)
 			if err != nil {
 				return err
 			}
@@ -65,7 +65,7 @@ func IsPNG(file *os.File, startOffset int64) (bool, error) {
 	return bytes.Equal(magicBytes, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0xA, 0x1A, 0x0A}), nil
 }
 
-func GetChunks(file *os.File, startOffset int64) ([]Chunk, error) {
+func GetChunks(file *os.File, startOffset int64, length int64) ([]Chunk, error) {
 	var result []Chunk
 	offset := startOffset + int64(8)
 	for {
@@ -85,13 +85,16 @@ func GetChunks(file *os.File, startOffset int64) ([]Chunk, error) {
 		}
 		result = append(result, chunk)
 		offset += 12 + int64(chunk.Length)
+		if offset >= (startOffset + length) {
+			break
+		}
 	}
 	return result, nil
 }
 
-func GetTextData(file *os.File, startOffset int64) (map[string]string, error) {
+func GetTextData(file *os.File, startOffset int64, length int64) (map[string]string, error) {
 	result := make(map[string]string)
-	chunks, err := GetChunks(file, startOffset)
+	chunks, err := GetChunks(file, startOffset, length)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +108,8 @@ func GetTextData(file *os.File, startOffset int64) (map[string]string, error) {
 }
 
 func RemoveTextData(file *os.File) error {
-	chunks, err := GetChunks(file, 0)
+	fileInfo, _ := file.Stat()
+	chunks, err := GetChunks(file, 0, fileInfo.Size())
 	if err != nil {
 		return err
 	}
