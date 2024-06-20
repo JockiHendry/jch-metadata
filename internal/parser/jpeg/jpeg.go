@@ -1,6 +1,7 @@
 package jpeg
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -103,34 +104,41 @@ func IsJPEG(file *os.File, startOffset int64) (bool, error) {
 
 func FindApplicationMarkers(file *os.File, startOffset int64) ([]ApplicationSegment, error) {
 	offset := startOffset
+	reader := bufio.NewReader(file)
+	_, err := reader.Discard(int(offset))
+	if err != nil {
+		return nil, err
+	}
 	var result []ApplicationSegment
 	appMarker := ApplicationSegment{
 		Marker: make([]byte, 2),
 	}
 	for {
-		_, err := file.ReadAt(appMarker.Marker, offset)
+		_, err = io.ReadFull(reader, appMarker.Marker)
 		if err == io.EOF {
 			break
 		}
+		if err != nil {
+			return nil, err
+		}
 		if appMarker.Marker[0] == 0xFF && appMarker.Marker[1] >= 0xE0 && appMarker.Marker[1] <= 0xEF {
 			lengthRaw := make([]byte, 2)
-			_, err := file.ReadAt(lengthRaw, offset+2)
+			_, err = io.ReadFull(reader, lengthRaw)
 			if err != nil {
 				return nil, err
 			}
 			appMarker.Length = binary.BigEndian.Uint16(lengthRaw)
 			appMarker.Raw = make([]byte, appMarker.Length+2)
-			_, err = file.ReadAt(appMarker.Raw, offset)
+			copy(appMarker.Raw, appMarker.Marker)
+			copy(appMarker.Raw[2:], lengthRaw)
+			_, err = io.ReadFull(reader, appMarker.Raw[4:])
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, appMarker)
-			offset += int64(2 + appMarker.Length)
 			appMarker = ApplicationSegment{
 				Marker: make([]byte, 2),
 			}
-		} else {
-			offset += 2
 		}
 	}
 	return result, nil
