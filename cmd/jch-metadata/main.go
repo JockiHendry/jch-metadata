@@ -8,6 +8,7 @@ import (
 	"jch-metadata/internal/parser/jpeg"
 	"jch-metadata/internal/parser/mkv"
 	"jch-metadata/internal/parser/png"
+	"jch-metadata/internal/parser/webp"
 	"os"
 )
 
@@ -16,9 +17,10 @@ var inputFilename string
 
 var parsers = []parser.Parser{
 	flac.Parser,
-	mkv.Parser,
-	png.Parser,
 	jpeg.Parser,
+	png.Parser,
+	webp.Parser,
+	mkv.Parser,
 }
 
 func main() {
