@@ -8,9 +8,9 @@ import (
 	"io"
 	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
+	"jch-metadata/internal/parser/shared"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -31,27 +31,14 @@ var Parser = parser.Parser{
 			output.PrintForm(startOffset > 0, "Has JFIF Thumbnail", fmt.Sprintf("%v", metadata.JFIFThumbnail), 20)
 			output.PrintForm(startOffset > 0, "Has JFXX Thumbnail", fmt.Sprintf("%v", metadata.JFXXThumbnail), 20)
 			output.Println(startOffset > 0)
-			if len(metadata.IFDs) > 0 {
-				for _, ifd := range metadata.IFDs {
-					output.PrintHeader(startOffset > 0, "EXIF IFD Offset 0x%0X", ifd.StartOffset)
-					tags := make([]uint16, len(ifd.Tags))
-					i := 0
-					for k := range ifd.Tags {
-						tags[i] = k
-						i++
-					}
-					sort.Slice(tags, func(i, j int) bool { return tags[i] < tags[j] })
-					for _, t := range tags {
-						output.PrintForm(startOffset > 0, fmt.Sprintf("0x%04X", t), ifd.Tags[t], 10)
-					}
+			shared.PrintExif(startOffset > 0, metadata.IFDs)
+			if metadata.XMP != nil {
+				output.PrintHeader(startOffset > 0, "XMP")
+				for _, s := range metadata.XMP {
+					output.PrintMultiline(startOffset > 0, s)
 					output.Println(startOffset > 0)
 				}
-			}
 
-			output.PrintHeader(startOffset > 0, "XMP")
-			for _, s := range metadata.XMP {
-				output.PrintMultiline(startOffset > 0, s)
-				output.Println(startOffset > 0)
 			}
 
 			for _, m := range metadata.UnsupportedMarkers {
@@ -60,14 +47,7 @@ var Parser = parser.Parser{
 				output.Println(startOffset > 0)
 			}
 			output.Println(startOffset > 0)
-			output.PrintHeader(startOffset > 0, "ICC Profile")
-			output.PrintForm(startOffset > 0, "CMM Type", metadata.ICCProfile.CmmType, 18)
-			output.PrintForm(startOffset > 0, "Profile Class", metadata.ICCProfile.ProfileClass, 18)
-			output.PrintForm(startOffset > 0, "Primary Platform", metadata.ICCProfile.PrimaryPlatform, 18)
-			output.PrintForm(startOffset > 0, "Dev Manufacturer", metadata.ICCProfile.DeviceManufacturer, 18)
-			output.PrintForm(startOffset > 0, "Dev Model", metadata.ICCProfile.DeviceModel, 18)
-			output.PrintForm(startOffset > 0, "Profile Creator", metadata.ICCProfile.ProfileCreator, 18)
-			output.PrintForm(startOffset > 0, "Copyright", metadata.ICCProfile.Copyright, 18)
+			shared.PrintICC(startOffset > 0, metadata.ICCProfile)
 		} else if action == parser.ClearAction {
 			appSegments, err := FindApplicationSegments(file, startOffset)
 			if err != nil {
@@ -348,15 +328,15 @@ func (m *ApplicationSegment) IsExtendedXMPSegment() bool {
 	return string(m.Raw[4:38]) == "http://ns.adobe.com/xmp/extension/"
 }
 
-func (m *ApplicationSegment) GetIFDs() []IFD {
-	return ParseExif(m.Raw[10:])
+func (m *ApplicationSegment) GetIFDs() []shared.IFD {
+	return shared.ParseExif(m.Raw[4:])
 }
 
-func (m *ApplicationSegment) GetICCProfile() Profile {
+func (m *ApplicationSegment) GetICCProfile() *shared.Profile {
 	if m.Raw[16] != 1 {
-		return Profile{}
+		return &shared.Profile{}
 	}
-	return ParseICC(m.Raw[18:])
+	return shared.ParseICC(m.Raw[18:])
 }
 
 func (m *ApplicationSegment) GetXMP() string {
@@ -370,8 +350,8 @@ func (m *ApplicationSegment) GetExtendedXMP() string {
 type Metadata struct {
 	JFIFThumbnail      bool
 	JFXXThumbnail      bool
-	IFDs               []IFD
-	ICCProfile         Profile
+	IFDs               []shared.IFD
+	ICCProfile         *shared.Profile
 	UnsupportedMarkers []ApplicationSegment
 	XMP                []string
 }

@@ -1,11 +1,12 @@
-package jpeg
+package shared
 
 import (
 	"bytes"
 	"encoding/binary"
+	"jch-metadata/internal/output"
 )
 
-func ParseICC(raw []byte) Profile {
+func ParseICC(raw []byte) *Profile {
 	result := Profile{
 		CmmType:            string(raw[4:8]),
 		ProfileClass:       string(raw[12:16]),
@@ -29,7 +30,7 @@ func ParseICC(raw []byte) Profile {
 		}
 		offset += 12
 	}
-	return result
+	return &result
 }
 
 type Profile struct {
@@ -40,4 +41,18 @@ type Profile struct {
 	DeviceModel        string
 	ProfileCreator     string
 	Copyright          string
+}
+
+func PrintICC(indented bool, profile *Profile) {
+	if profile == nil {
+		return
+	}
+	output.PrintHeader(indented, "ICC Profile")
+	output.PrintForm(indented, "CMM Type", profile.CmmType, 18)
+	output.PrintForm(indented, "Profile Class", profile.ProfileClass, 18)
+	output.PrintForm(indented, "Primary Platform", profile.PrimaryPlatform, 18)
+	output.PrintForm(indented, "Dev Manufacturer", profile.DeviceManufacturer, 18)
+	output.PrintForm(indented, "Dev Model", profile.DeviceModel, 18)
+	output.PrintForm(indented, "Profile Creator", profile.ProfileCreator, 18)
+	output.PrintForm(indented, "Copyright", profile.Copyright, 18)
 }

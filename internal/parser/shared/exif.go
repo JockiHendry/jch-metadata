@@ -1,8 +1,10 @@
-package jpeg
+package shared
 
 import (
 	"encoding/binary"
 	"fmt"
+	"jch-metadata/internal/output"
+	"sort"
 )
 
 type IFD struct {
@@ -11,10 +13,19 @@ type IFD struct {
 }
 
 func ParseExif(raw []byte) []IFD {
-	byteOrder := ByteOrder{
-		byteOrder: raw[0:2],
+	if string(raw[0:4]) != "Exif" {
+		return nil
 	}
-	offsetIFD := byteOrder.getUint32(raw[4:8])
+	if raw[4] != 0x00 && raw[5] != 0x00 {
+		return nil
+	}
+	byteOrder := ByteOrder{
+		byteOrder: raw[6:8],
+	}
+	if byteOrder.getUint16(raw[8:10]) != 0x002A {
+		return nil
+	}
+	offsetIFD := byteOrder.getUint32(raw[10:14])
 	var result []IFD
 	ifd := IFD{}
 	for {
@@ -38,7 +49,7 @@ func ParseExif(raw []byte) []IFD {
 }
 
 func ParseIFD(ifd *IFD, raw []byte, byteOrder ByteOrder) ([]uint32, uint32) {
-	i := ifd.StartOffset
+	i := ifd.StartOffset + 6
 	numberOfTags := int(byteOrder.getUint16(raw[i : i+2]))
 	i += 2
 	links := make([]uint32, 0)
@@ -56,11 +67,12 @@ func ParseIFD(ifd *IFD, raw []byte, byteOrder ByteOrder) ([]uint32, uint32) {
 			links = append(links, valueOffset)
 		} else {
 			if tagType == 2 || tagType == 129 {
-				end := valueOffset + valueCount - 1
+				start := valueOffset + 6
+				end := start + valueCount - 1
 				if int(end) > len(raw) {
 					continue
 				}
-				ifd.Tags[tagId] = string(raw[valueOffset:end])
+				ifd.Tags[tagId] = string(raw[start:end])
 			} else {
 				ifd.Tags[tagId] = fmt.Sprintf("%v", valueOffset)
 			}
@@ -92,4 +104,24 @@ func (o *ByteOrder) getUint32(value []byte) uint32 {
 	}
 	fmt.Printf("Invalid byte order: %v", o.byteOrder)
 	return 0
+}
+
+func PrintExif(indented bool, ifds []IFD) {
+	if ifds == nil || len(ifds) == 0 {
+		return
+	}
+	for _, ifd := range ifds {
+		output.PrintHeader(indented, "EXIF IFD Offset 0x%0X", ifd.StartOffset)
+		tags := make([]uint16, len(ifd.Tags))
+		i := 0
+		for k := range ifd.Tags {
+			tags[i] = k
+			i++
+		}
+		sort.Slice(tags, func(i, j int) bool { return tags[i] < tags[j] })
+		for _, t := range tags {
+			output.PrintForm(indented, fmt.Sprintf("0x%04X", t), ifd.Tags[t], 10)
+		}
+		output.Println(indented)
+	}
 }
