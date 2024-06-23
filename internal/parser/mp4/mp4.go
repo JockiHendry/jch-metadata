@@ -27,6 +27,12 @@ var Parser = parser.Parser{
 			for _, box := range boxes {
 				box.Print()
 			}
+		} else if action == parser.ClearAction {
+			err := ClearMetadata(file, startOffset, length)
+			if err != nil {
+				return err
+			}
+			output.Println(false, "Metadata has been cleared!")
 		}
 		return nil
 	},
@@ -39,6 +45,39 @@ func IsMP4(file *os.File) (bool, error) {
 		return false, fmt.Errorf("failed to read file: %w", err)
 	}
 	return string(magicBytes[:]) == "ftyp", nil
+}
+
+func ClearMetadata(file *os.File, offset int64, length int64) error {
+	output.Println(false, "Turning moov.meta box into free space...")
+	boxes, err := GetBoxes(file, offset, length)
+	if err != nil {
+		return err
+	}
+	var moovBox MoovBox
+	for _, b := range boxes {
+		if b.GetType() == "moov" {
+			moovBox = b.(MoovBox)
+			break
+		}
+	}
+	if moovBox.Size == 0 {
+		output.Println(false, "Can't find moov box!")
+		return nil
+	}
+	meta := moovBox.FindNestedBoxByType("meta")
+	if meta == nil {
+		output.Println(false, "Can't find meta box!")
+		return nil
+	}
+	metaOffset, metaData, err := meta.(MetaBox).ToFreeBox()
+	if err != nil {
+		return err
+	}
+	_, err = file.WriteAt(metaData, metaOffset)
+	if err != nil {
+		return fmt.Errorf("error writing changes to file: %w", err)
+	}
+	return nil
 }
 
 func GetBoxes(file *os.File, startOffset int64, length int64) ([]PrintableBox, error) {
@@ -151,4 +190,20 @@ func (b Box) Print() {
 		}
 	}
 	output.Println(false)
+}
+
+func (b Box) ToFreeBox() (int64, []byte, error) {
+	data := make([]byte, b.Size)
+	_, err := b.File.ReadAt(data, b.StartOffset)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error reading data: %w", err)
+	}
+	data[4] = 'f'
+	data[5] = 'r'
+	data[6] = 'e'
+	data[7] = 'e'
+	for i := 8; i < len(data); i++ {
+		data[i] = 0
+	}
+	return b.StartOffset, data, nil
 }

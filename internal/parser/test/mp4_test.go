@@ -166,3 +166,32 @@ func TestMdta(t *testing.T) {
 		t.Fatalf("Invalid value for key: %s", result["com.apple.quicktime.location.ISO6709"].String())
 	}
 }
+
+func TestToFreeBox(t *testing.T) {
+	f, err := os.Open("internal/parser/test/test1.mp4")
+	if err != nil {
+		t.Fatalf("Error reading file: %s", err)
+	}
+	stat, err := f.Stat()
+	if err != nil {
+		t.Fatalf("Error reading file: %s", err)
+	}
+	boxes, err := mp4.GetBoxes(f, 0, stat.Size())
+	if err != nil {
+		t.Fatalf("Error getting boxes: %s", err)
+	}
+	box := boxes[1].(mp4.MoovBox)
+	expectedStartOffset := box.StartOffset
+	startOffset, data, err := box.ToFreeBox()
+	if err != nil {
+		t.Fatalf("Error converting to free box: %s", err)
+	}
+	if startOffset != expectedStartOffset {
+		t.Fatalf("Unexpected start offset: %d", startOffset)
+	}
+	for i := 8; i < len(data); i++ {
+		if data[i] != 0 {
+			t.Fatalf("Data is not cleared: %c", data[i])
+		}
+	}
+}
