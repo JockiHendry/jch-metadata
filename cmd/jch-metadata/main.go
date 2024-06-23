@@ -7,6 +7,7 @@ import (
 	"jch-metadata/internal/parser/flac"
 	"jch-metadata/internal/parser/jpeg"
 	"jch-metadata/internal/parser/mkv"
+	"jch-metadata/internal/parser/mp4"
 	"jch-metadata/internal/parser/png"
 	"jch-metadata/internal/parser/webp"
 	"os"
@@ -21,6 +22,7 @@ var parsers = []parser.Parser{
 	png.Parser,
 	webp.Parser,
 	mkv.Parser,
+	mp4.Parser,
 }
 
 func main() {
