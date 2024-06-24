@@ -50,6 +50,8 @@ Language     :
 Value        : Big Buck Bunny - test 1
 ```
 
+If a directory is specified instead of a file, `jch-metadata` will process all files in the directory (including files in subdirectories).
+
 For container format like Matroska that supports multiple attachments, `jch-metadata` will also perform inspection on the attachments:
 
 ```
