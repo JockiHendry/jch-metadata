@@ -186,77 +186,79 @@ func GetTrackType(value uint64) string {
 
 func GetMetadata(file *os.File) ([]Metadata, error) {
 	var result []Metadata
-	elements, err := ParseFile(file)
+	metadata := Metadata{}
+	infoElement, err := GetElementFromSeek(file, []byte{0x15, 0x49, 0xA9, 0x66})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file stat: %w", err)
+		return nil, err
 	}
-	for _, v := range elements {
-		if !bytes.Equal(v.ElementID, []byte{0x18, 0x53, 0x80, 0x67}) {
-			continue
-		}
-		metadata := Metadata{}
-		e := v.GetElements()
+	infoElements := infoElement.GetElements()
+	metadata.Info.Filename = GetStringValue([]byte{0x73, 0x84}, infoElements)
+	metadata.Info.Title = GetStringValue([]byte{0x7B, 0xA9}, infoElements)
+	metadata.Info.DateUTC = GetDateValue([]byte{0x44, 0x61}, infoElements)
+	metadata.Info.MuxingApp = GetStringValue([]byte{0x4D, 0x80}, infoElements)
+	metadata.Info.WritingApp = GetStringValue([]byte{0x57, 0x41}, infoElements)
 
-		infoElement := SearchEBMLElements([]byte{0x15, 0x49, 0xA9, 0x66}, e)
-		infoElements := infoElement.GetElements()
-		metadata.Info.Filename = GetStringValue([]byte{0x73, 0x84}, infoElements)
-		metadata.Info.Title = GetStringValue([]byte{0x7B, 0xA9}, infoElements)
-		metadata.Info.DateUTC = GetDateValue([]byte{0x44, 0x61}, infoElements)
-		metadata.Info.MuxingApp = GetStringValue([]byte{0x4D, 0x80}, infoElements)
-		metadata.Info.WritingApp = GetStringValue([]byte{0x57, 0x41}, infoElements)
-
-		var tracks []Track
-		trackElement := SearchEBMLElements([]byte{0x16, 0x54, 0xAE, 0x6B}, e)
-		if trackElement != nil {
-			trackElements := trackElement.GetElements()
-			for _, t := range trackElements {
-				if bytes.Equal(t.ElementID, []byte{0xAE}) {
-					children := t.GetElements()
-					track := Track{
-						Number:   GetUInt64Value([]byte{0xD7}, children),
-						Name:     GetStringValue([]byte{0x53, 0x6E}, children),
-						Type:     GetUInt64Value([]byte{0x83}, children),
-						Language: GetStringValue([]byte{0x22, 0xB5, 0x9C}, children),
-					}
-					tracks = append(tracks, track)
+	var tracks []Track
+	trackElement, err := GetElementFromSeek(file, []byte{0x16, 0x54, 0xAE, 0x6B})
+	if err != nil {
+		return nil, err
+	}
+	if trackElement != nil {
+		trackElements := trackElement.GetElements()
+		for _, t := range trackElements {
+			if bytes.Equal(t.ElementID, []byte{0xAE}) {
+				children := t.GetElements()
+				track := Track{
+					Number:   GetUInt64Value([]byte{0xD7}, children),
+					Name:     GetStringValue([]byte{0x53, 0x6E}, children),
+					Type:     GetUInt64Value([]byte{0x83}, children),
+					Language: GetStringValue([]byte{0x22, 0xB5, 0x9C}, children),
 				}
+				tracks = append(tracks, track)
 			}
 		}
-		metadata.Tracks = tracks
+	}
+	metadata.Tracks = tracks
 
-		var attachments []Attachment
-		attachmentElement := SearchEBMLElements([]byte{0x19, 0x41, 0xA4, 0x69}, e)
-		if attachmentElement != nil {
-			attachments = NewAttachments(attachmentElement)
-		}
-		metadata.Attachments = attachments
+	var attachments []Attachment
+	attachmentElement, err := GetElementFromSeek(file, []byte{0x19, 0x41, 0xA4, 0x69})
+	if err != nil {
+		return nil, err
+	}
+	if attachmentElement != nil {
+		attachments = NewAttachments(attachmentElement)
+	}
+	metadata.Attachments = attachments
 
-		var tags []Tag
-		tagElement := SearchEBMLElements([]byte{0x12, 0x54, 0xC3, 0x67}, e)
-		if tagElement != nil {
-			tagElements := tagElement.GetElements()
-			for _, t := range tagElements {
-				if bytes.Equal(t.ElementID, []byte{0x73, 0x73}) {
-					children := t.GetElements()
-					tag := Tag{
-						TargetType: GetStringValue([]byte{0x63, 0xCA}, children),
-					}
-					simpleTag := SearchEBMLElements([]byte{0x67, 0xC8}, children)
-					if simpleTag != nil {
-						simpleTags := simpleTag.GetElements()
-						tag.Name = GetStringValue([]byte{0x45, 0xA3}, simpleTags)
-						tag.Language = GetStringValue([]byte{0x44, 0x7A}, simpleTags)
-						tag.Value = GetStringValue([]byte{0x44, 0x87}, simpleTags)
-						tags = append(tags, tag)
-					}
-
+	var tags []Tag
+	tagElement, err := GetElementFromSeek(file, []byte{0x12, 0x54, 0xC3, 0x67})
+	if err != nil {
+		return nil, err
+	}
+	if tagElement != nil {
+		tagElements := tagElement.GetElements()
+		for _, t := range tagElements {
+			if bytes.Equal(t.ElementID, []byte{0x73, 0x73}) {
+				children := t.GetElements()
+				tag := Tag{
+					TargetType: GetStringValue([]byte{0x63, 0xCA}, children),
 				}
+				simpleTag := SearchEBMLElements([]byte{0x67, 0xC8}, children)
+				if simpleTag != nil {
+					simpleTags := simpleTag.GetElements()
+					tag.Name = GetStringValue([]byte{0x45, 0xA3}, simpleTags)
+					tag.Language = GetStringValue([]byte{0x44, 0x7A}, simpleTags)
+					tag.Value = GetStringValue([]byte{0x44, 0x87}, simpleTags)
+					tags = append(tags, tag)
+				}
+
 			}
 		}
-		metadata.Tags = tags
-
-		result = append(result, metadata)
 	}
+	metadata.Tags = tags
+
+	result = append(result, metadata)
+
 	return result, nil
 }
 
@@ -308,7 +310,7 @@ func GetElementFromSeek(file *os.File, elementId []byte) (*EBMLElement, error) {
 	var seekResult *EBMLElement
 	for _, seekElement := range seekElements.GetElements() {
 		search := seekElement.FindFirstElement([]byte{0x53, 0xAB}, elementId)
-		if search != nil {
+		if search != &EmptyElement {
 			seekResult = &seekElement
 			break
 		}

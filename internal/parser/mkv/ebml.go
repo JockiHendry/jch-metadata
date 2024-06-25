@@ -17,7 +17,10 @@ type EBMLElement struct {
 	Elements  []EBMLElement
 }
 
+var EmptyElement = EBMLElement{}
+
 func (e *EBMLElement) FindFirstElement(elementId []byte, value []byte) *EBMLElement {
+	fileOffset := e.DataAt
 	if e.Elements != nil {
 		for _, child := range e.Elements {
 			if bytes.Equal(child.ElementID, elementId) {
@@ -30,9 +33,9 @@ func (e *EBMLElement) FindFirstElement(elementId []byte, value []byte) *EBMLElem
 					}
 				}
 			}
+			fileOffset = child.DataAt + int64(child.Size)
 		}
 	}
-	fileOffset := e.DataAt
 	limit := e.DataAt + int64(e.Size)
 	for fileOffset < limit {
 		var element *EBMLElement
@@ -43,16 +46,18 @@ func (e *EBMLElement) FindFirstElement(elementId []byte, value []byte) *EBMLElem
 		}
 		if bytes.Equal(element.ElementID, elementId) {
 			if value == nil {
+				e.Elements = append(e.Elements, *element)
 				return element
 			} else {
 				data, _ := element.GetBytes()
 				if bytes.Equal(data, value) {
+					e.Elements = append(e.Elements, *element)
 					return element
 				}
 			}
 		}
 	}
-	return nil
+	return &EmptyElement
 }
 
 func (e *EBMLElement) GetElements() []EBMLElement {
