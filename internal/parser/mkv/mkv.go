@@ -2,7 +2,6 @@ package mkv
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
@@ -19,11 +18,11 @@ var Parser = parser.Parser{
 		return IsMkv(file, startOffset)
 	},
 	Handle: func(file *os.File, action parser.Action, startOffset int64, length int64, parsers []parser.Parser) error {
-		metadata, err := GetMetadata(file)
-		if err != nil {
-			return err
-		}
 		if action == parser.ShowAction {
+			metadata, err := GetMetadata(file)
+			if err != nil {
+				return err
+			}
 			for _, m := range metadata {
 				err := Show(m, file, parsers)
 				if err != nil {
@@ -31,19 +30,22 @@ var Parser = parser.Parser{
 				}
 			}
 		} else if action == parser.ClearAction {
-			err = ClearMetadata(file)
+			err := ClearMetadata(file)
 			if err != nil {
 				return err
 			}
 			output.Println(false, "Metadata cleared")
 		} else if action == parser.ExtractAction {
-			for _, m := range metadata {
-				for _, a := range m.Attachments {
-					output.Printf(false, "Extracting attachment %s...", a.Name)
-					err = ExtractAttachment(file, a)
-					if err != nil {
-						return err
-					}
+			attachmentElement, err := GetElementFromSeek(file, []byte{0x19, 0x41, 0xA4, 0x69})
+			if err != nil {
+				return err
+			}
+			attachments := NewAttachments(attachmentElement)
+			for _, a := range attachments {
+				output.Printf(false, "Extracting attachment %s...", a.Name)
+				err = ExtractAttachment(file, a)
+				if err != nil {
+					return err
 				}
 			}
 		} else {
@@ -116,161 +118,13 @@ func IsMkv(file *os.File, startOffset int64) (bool, error) {
 	return bytes.Equal(magicBytes, []byte{0x1A, 0x45, 0xDF, 0xA3}), nil
 }
 
-func GetVSize(v []byte) (uint64, int) {
-	if v[0] == 0 {
-		return 0, 1
-	}
-	i := 0
-	for {
-		if v[0]&(byte(128)>>i) == (byte(128) >> i) {
-			break
-		}
-		i = i + 1
-	}
-	i = i + 1
-	startIndex := 8 - i
-	result := make([]byte, 8)
-	result[startIndex] = v[0] & (byte(0xFF) >> i)
-	startIndex++
-	for j := 1; j < i; j++ {
-		result[startIndex] = v[j]
-		startIndex++
-	}
-	return binary.BigEndian.Uint64(result), i
-}
-
-type EBMLElement struct {
-	ElementID []byte
-	Size      uint64
-	StartAt   int64
-	DataAt    int64
-	File      *os.File
-}
-
-func (e *EBMLElement) GetElements() ([]EBMLElement, error) {
-	return GetEBMLElements(e.File, e.DataAt, e.DataAt+int64(e.Size))
-}
-
-func (e *EBMLElement) StringValue() (string, error) {
-	if e.Size == 0 {
-		return "", nil
-	}
-	data := make([]byte, e.Size)
-	_, err := e.File.ReadAt(data, e.DataAt)
-	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
-	}
-	return string(data), nil
-}
-
-func (e *EBMLElement) UintValue() (uint64, error) {
-	if e.Size == 0 {
-		return 0, nil
-	}
-	data := make([]byte, e.Size)
-	_, err := e.File.ReadAt(data, e.DataAt)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read file: %w", err)
-	}
-	tmp := make([]byte, 8)
-	startIndex := 0
-	for i := 0; i < 8-len(data); i++ {
-		tmp[startIndex] = 0
-		startIndex++
-	}
-	for i := 0; i < len(data); i++ {
-		tmp[startIndex] = data[i]
-		startIndex++
-	}
-	return binary.BigEndian.Uint64(tmp), nil
-}
-
-func (e *EBMLElement) DateValue() (time.Time, error) {
-	if e.Size == 0 {
-		return time.Unix(0, 0), nil
-	}
-	data := make([]byte, 8)
-	_, err := e.File.ReadAt(data, e.DataAt)
-	if err != nil {
-		return time.Unix(0, 0), fmt.Errorf("failed to read file: %w", err)
-	}
-	dateValue := binary.BigEndian.Uint64(data)
-	if dateValue == 0 {
-		return time.Unix(0, 0), nil
-	}
-	return time.Unix(978307200, int64(dateValue)), nil
-}
-
-func (e *EBMLElement) ClearValue() error {
-	if e.Size == 0 {
-		return nil
-	}
-	data := make([]byte, e.Size)
-	for i := range data {
-		data[i] = 0
-	}
-	_, err := e.File.WriteAt(data, e.DataAt)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func GetEBMLElements(file *os.File, fileOffset int64, limit int64) ([]EBMLElement, error) {
-	var result []EBMLElement
-
-	for {
-		// Retrieve elementID
-		elementIdData := make([]byte, 8)
-		_, err := file.ReadAt(elementIdData, fileOffset)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file: %w", err)
-		}
-		_, offset := GetVSize(elementIdData[:])
-		element := EBMLElement{
-			ElementID: elementIdData[0 : 0+offset],
-			StartAt:   fileOffset,
-			File:      file,
-		}
-		fileOffset += int64(offset)
-
-		// Retrieve elementSize
-		sizeData := make([]byte, 8)
-		_, err = file.ReadAt(sizeData, fileOffset)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file: %w", err)
-		}
-		size, offset := GetVSize(sizeData[:])
-		element.Size = size
-		fileOffset += int64(offset)
-		element.DataAt = fileOffset
-
-		result = append(result, element)
-		fileOffset += int64(size)
-
-		if fileOffset >= limit {
-			break
-		}
-	}
-	return result, nil
-}
-
-func SearchEBMLElements(elementID []byte, elements []EBMLElement) *EBMLElement {
-	for _, v := range elements {
-		if bytes.Equal(v.ElementID, elementID) {
-			return &v
-		}
-	}
-	return nil
-}
-
 func ParseFile(file *os.File) ([]EBMLElement, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file stat: %w", err)
 	}
 	fileSize := fileInfo.Size()
-	return GetEBMLElements(file, 0, fileSize)
+	return GetEBMLElements(file, 0, fileSize, 9999)
 }
 
 func GetStringValue(elementId []byte, elements []EBMLElement) string {
@@ -341,10 +195,10 @@ func GetMetadata(file *os.File) ([]Metadata, error) {
 			continue
 		}
 		metadata := Metadata{}
-		e, _ := v.GetElements()
+		e := v.GetElements()
 
 		infoElement := SearchEBMLElements([]byte{0x15, 0x49, 0xA9, 0x66}, e)
-		infoElements, _ := infoElement.GetElements()
+		infoElements := infoElement.GetElements()
 		metadata.Info.Filename = GetStringValue([]byte{0x73, 0x84}, infoElements)
 		metadata.Info.Title = GetStringValue([]byte{0x7B, 0xA9}, infoElements)
 		metadata.Info.DateUTC = GetDateValue([]byte{0x44, 0x61}, infoElements)
@@ -354,15 +208,15 @@ func GetMetadata(file *os.File) ([]Metadata, error) {
 		var tracks []Track
 		trackElement := SearchEBMLElements([]byte{0x16, 0x54, 0xAE, 0x6B}, e)
 		if trackElement != nil {
-			trackElements, _ := trackElement.GetElements()
+			trackElements := trackElement.GetElements()
 			for _, t := range trackElements {
 				if bytes.Equal(t.ElementID, []byte{0xAE}) {
-					elements, _ := t.GetElements()
+					children := t.GetElements()
 					track := Track{
-						Number:   GetUInt64Value([]byte{0xD7}, elements),
-						Name:     GetStringValue([]byte{0x53, 0x6E}, elements),
-						Type:     GetUInt64Value([]byte{0x83}, elements),
-						Language: GetStringValue([]byte{0x22, 0xB5, 0x9C}, elements),
+						Number:   GetUInt64Value([]byte{0xD7}, children),
+						Name:     GetStringValue([]byte{0x53, 0x6E}, children),
+						Type:     GetUInt64Value([]byte{0x83}, children),
+						Language: GetStringValue([]byte{0x22, 0xB5, 0x9C}, children),
 					}
 					tracks = append(tracks, track)
 				}
@@ -373,38 +227,23 @@ func GetMetadata(file *os.File) ([]Metadata, error) {
 		var attachments []Attachment
 		attachmentElement := SearchEBMLElements([]byte{0x19, 0x41, 0xA4, 0x69}, e)
 		if attachmentElement != nil {
-			attachmentsElements, _ := attachmentElement.GetElements()
-			for i, a := range attachmentsElements {
-				if bytes.Equal(a.ElementID, []byte{0x61, 0xA7}) {
-					elements, _ := a.GetElements()
-					attachment := Attachment{
-						Index:       i,
-						Name:        GetStringValue([]byte{0x46, 0x6E}, elements),
-						Description: GetStringValue([]byte{0x46, 0x7E}, elements),
-						MediaType:   GetStringValue([]byte{0x46, 0x60}, elements),
-					}
-					attachmentData := SearchEBMLElements([]byte{0x46, 0x5C}, elements)
-					attachment.DataAt = attachmentData.DataAt
-					attachment.Size = int64(attachmentData.Size)
-					attachments = append(attachments, attachment)
-				}
-			}
+			attachments = NewAttachments(attachmentElement)
 		}
 		metadata.Attachments = attachments
 
 		var tags []Tag
 		tagElement := SearchEBMLElements([]byte{0x12, 0x54, 0xC3, 0x67}, e)
 		if tagElement != nil {
-			tagElements, _ := tagElement.GetElements()
+			tagElements := tagElement.GetElements()
 			for _, t := range tagElements {
 				if bytes.Equal(t.ElementID, []byte{0x73, 0x73}) {
-					elements, _ := t.GetElements()
+					children := t.GetElements()
 					tag := Tag{
-						TargetType: GetStringValue([]byte{0x63, 0xCA}, elements),
+						TargetType: GetStringValue([]byte{0x63, 0xCA}, children),
 					}
-					simpleTag := SearchEBMLElements([]byte{0x67, 0xC8}, elements)
+					simpleTag := SearchEBMLElements([]byte{0x67, 0xC8}, children)
 					if simpleTag != nil {
-						simpleTags, _ := simpleTag.GetElements()
+						simpleTags := simpleTag.GetElements()
 						tag.Name = GetStringValue([]byte{0x45, 0xA3}, simpleTags)
 						tag.Language = GetStringValue([]byte{0x44, 0x7A}, simpleTags)
 						tag.Value = GetStringValue([]byte{0x44, 0x87}, simpleTags)
@@ -430,11 +269,11 @@ func ClearMetadata(file *os.File) error {
 		if !bytes.Equal(v.ElementID, []byte{0x18, 0x53, 0x80, 0x67}) {
 			continue
 		}
-		e, _ := v.GetElements()
+		e := v.GetElements()
 
 		output.Println(false, "Removing all values from Info elements...")
 		infoElement := SearchEBMLElements([]byte{0x15, 0x49, 0xA9, 0x66}, e)
-		infoElements, _ := infoElement.GetElements()
+		infoElements := infoElement.GetElements()
 		err := ClearValue([]byte{0x73, 0x84}, infoElements)
 		if err != nil {
 			return err
@@ -457,6 +296,65 @@ func ClearMetadata(file *os.File) error {
 		}
 	}
 	return nil
+}
+
+func GetElementFromSeek(file *os.File, elementId []byte) (*EBMLElement, error) {
+	elements, err := ParseFile(file)
+	if err != nil {
+		return nil, err
+	}
+	rootElement := SearchEBMLElements([]byte{0x18, 0x53, 0x80, 0x67}, elements)
+	seekElements := rootElement.FindFirstElement([]byte{0x11, 0x4D, 0x9B, 0x74}, nil)
+	var seekResult *EBMLElement
+	for _, seekElement := range seekElements.GetElements() {
+		search := seekElement.FindFirstElement([]byte{0x53, 0xAB}, elementId)
+		if search != nil {
+			seekResult = &seekElement
+			break
+		}
+	}
+	if seekResult == nil {
+		return nil, nil
+	}
+	offset, err := seekResult.FindFirstElement([]byte{0x53, 0xAC}, nil).UintValue()
+	if err != nil {
+		return nil, err
+	}
+	result, err := GetEBMLElements(file, rootElement.DataAt+int64(offset), rootElement.DataAt+int64(rootElement.Size), 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return &result[0], nil
+}
+
+func NewAttachments(attachmentElement *EBMLElement) []Attachment {
+	var attachments []Attachment
+	attachmentsElements := attachmentElement.GetElements()
+	for i, a := range attachmentsElements {
+		if bytes.Equal(a.ElementID, []byte{0x61, 0xA7}) {
+			name, _ := a.FindFirstElement([]byte{0x46, 0x6E}, nil).StringValue()
+			descriptionElement := a.FindFirstElement([]byte{0x46, 0x7E}, nil)
+			description := ""
+			if descriptionElement != nil {
+				description, _ = descriptionElement.StringValue()
+			}
+			mediaType, _ := a.FindFirstElement([]byte{0x46, 0x60}, nil).StringValue()
+			attachment := Attachment{
+				Index:       i,
+				Name:        name,
+				Description: description,
+				MediaType:   mediaType,
+			}
+			attachmentData := a.FindFirstElement([]byte{0x46, 0x5C}, nil)
+			attachment.DataAt = attachmentData.DataAt
+			attachment.Size = int64(attachmentData.Size)
+			attachments = append(attachments, attachment)
+		}
+	}
+	return attachments
 }
 
 func ExtractAttachment(file *os.File, attachment Attachment) error {

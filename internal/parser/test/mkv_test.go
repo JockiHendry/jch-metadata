@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"jch-metadata/internal/parser"
 	"jch-metadata/internal/parser/flac"
 	"jch-metadata/internal/parser/jpeg"
@@ -126,10 +127,7 @@ func TestParseFile(t *testing.T) {
 	if headerElement.DataAt != 5 {
 		t.Fatalf("Expected header element data started at file offset 5 but found %d", headerElement.DataAt)
 	}
-	headerElements, err := headerElement.GetElements()
-	if err != nil {
-		t.Fatalf("Error reading file: %s", err)
-	}
+	headerElements := headerElement.GetElements()
 	if len(headerElements) != 3 {
 		t.Fatalf("Expected header elements to be 3 but found %d", len(headerElements))
 	}
@@ -218,5 +216,45 @@ func TestHandleAttachments(t *testing.T) {
 	err = mkv.Parser.Handle(f, parser.ShowAction, 0, fileInfo.Size(), parsers)
 	if err != nil {
 		t.Fatalf("Unexpected error: %s", err)
+	}
+}
+
+func TestFindFirstElement(t *testing.T) {
+	f, err := os.Open("internal/parser/test/test1.mkv")
+	if err != nil {
+		t.Fatalf("Error reading file: %s", err)
+	}
+	result, err := mkv.ParseFile(f)
+	if err != nil {
+		t.Fatalf("Error reading file: %s", err)
+	}
+	element := result[1].FindFirstElement([]byte{0x15, 0x49, 0xA9, 0x66}, nil)
+	if element == nil {
+		t.Fatalf("Unexpected nil element")
+	}
+	if !bytes.Equal(element.ElementID, []byte{0x15, 0x49, 0xA9, 0x66}) {
+		t.Fatalf("Unexpected element id: %v", element.ElementID)
+	}
+	if element.Size != 205 {
+		t.Fatalf("Unexpected element size: %d", element.Size)
+	}
+	if element.StartAt != 96 {
+		t.Fatalf("Unexpected element start at: %d", element.StartAt)
+	}
+	if element.DataAt != 102 {
+		t.Fatalf("Unexpected element data at: %d", element.DataAt)
+	}
+	searchWithValue := element.FindFirstElement([]byte{0x57, 0x41}, []byte("mkclean 0.5.5 ru from libebml v1.0.0 + libmatroska v1.0.0 + mkvmerge v4.1.1 ('Bouncin' Back') built on Jul  3 2010 22:54:08"))
+	if !bytes.Equal(searchWithValue.ElementID, []byte{0x57, 0x41}) {
+		t.Fatalf("Unexpected element id: %v", searchWithValue)
+	}
+	if searchWithValue.Size != 123 {
+		t.Fatalf("Unexpected element size: %d", searchWithValue.Size)
+	}
+	if searchWithValue.StartAt != 151 {
+		t.Fatalf("Unexpected element start at: %d", searchWithValue.StartAt)
+	}
+	if searchWithValue.DataAt != 154 {
+		t.Fatalf("Unexpected element data at: %d", searchWithValue.DataAt)
 	}
 }
