@@ -122,14 +122,16 @@ func main() {
 		totalFiles := 0
 		err = filepath.WalkDir(inputFilename, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				return err
+				fmt.Printf("Encountered error while processing file: %s\n", err)
+				return nil
 			}
 			if d.IsDir() {
 				return nil
 			}
 			fileInfo, err := d.Info()
 			if err != nil {
-				return err
+				fmt.Printf("Encountered error while getting file info: %s\n", err)
+				return nil
 			}
 			supported := parseBatchedFile(path, action, fileInfo.Size())
 			if supported {
@@ -145,5 +147,4 @@ func main() {
 	} else {
 		parseFile(inputFilename, action)
 	}
-
 }
