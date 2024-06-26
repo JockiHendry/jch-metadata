@@ -134,3 +134,9 @@ $ jch-metadata -f test1.mkv -a clear
 Removing all values from Info elements...
 Metadata cleared
 ```
+
+To execute in Windows PowerShell with pagination, run the following command:
+
+```
+C:\> jch-metadata.exe -f . | Out-Host -Paging
+```

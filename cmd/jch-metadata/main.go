@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
 	"jch-metadata/internal/parser/flac"
 	"jch-metadata/internal/parser/jpeg"
@@ -98,6 +99,7 @@ func parseBatchedFile(fileName string, action parser.Action, fileSize int64) boo
 }
 
 func main() {
+	output.Setup()
 	flag.StringVar(&inputFilename, "f", "", "Input filename")
 	flag.StringVar(&actionArg, "a", "show", "Action to perform: show, clear, extract")
 	flag.Parse()
