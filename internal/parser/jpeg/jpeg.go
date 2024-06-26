@@ -69,6 +69,7 @@ var Parser = parser.Parser{
 			}
 			if thumbnailData == nil {
 				output.Println(startOffset > 0, "No thumbnail to extract")
+				return nil
 			}
 			err = os.MkdirAll("output", os.ModePerm)
 			if err != nil {

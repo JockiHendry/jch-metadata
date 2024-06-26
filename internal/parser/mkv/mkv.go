@@ -40,6 +40,10 @@ var Parser = parser.Parser{
 			if err != nil {
 				return err
 			}
+			if attachmentElement == nil {
+				fmt.Println("No attachment to extract!")
+				return nil
+			}
 			attachments := NewAttachments(attachmentElement)
 			for _, a := range attachments {
 				output.Printf(false, "Extracting attachment %s...", a.Name)
