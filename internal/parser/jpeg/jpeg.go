@@ -116,16 +116,23 @@ func FindApplicationSegments(file *os.File, startOffset int64) ([]ApplicationSeg
 		i += 2
 		if appSegment.Marker[0] == 0xFF && appSegment.Marker[1] == 0xD9 {
 			break
+		} else if appSegment.Marker[1] == 0xFF {
+			err = reader.UnreadByte()
+			if err != nil {
+				return nil, fmt.Errorf("failed to unread byte: %w", err)
+			}
+			i -= 1
+			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read next application segment: %w", err)
 		}
 		if appSegment.Marker[0] == 0xFF && appSegment.Marker[1] >= 0xE0 && appSegment.Marker[1] <= 0xEF {
 			appSegment.StartOffset = i - 2
 			lengthRaw := make([]byte, 2)
 			_, err = io.ReadFull(reader, lengthRaw)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to read segment length: %w", err)
 			}
 			i += 2
 			appSegment.Length = binary.BigEndian.Uint16(lengthRaw)
@@ -136,7 +143,7 @@ func FindApplicationSegments(file *os.File, startOffset int64) ([]ApplicationSeg
 			}
 			_, err = io.ReadFull(reader, appSegment.Raw[4:])
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to read large segment length: %w", err)
 			}
 			i += int64(appSegment.Length) - 2
 			result = append(result, appSegment)
