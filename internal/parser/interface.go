@@ -46,6 +46,11 @@ func StartParsing(parsers []Parser, file *os.File, action Action, startOffset in
 			continue
 		}
 		output.Printf(startOffset > 0, "File type is %s\n\n", p.Name)
+		_, err = file.Seek(startOffset, 0)
+		if err != nil {
+			output.Printf(startOffset > 0, "Error changing file position: %s", err)
+			return false, err
+		}
 		err = p.Handle(file, action, startOffset, length, parsers)
 		if err != nil {
 			output.Printf(startOffset > 0, "Error handling file: %s", err)
