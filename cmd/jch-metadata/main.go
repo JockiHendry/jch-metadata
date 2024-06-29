@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"jch-metadata/internal/output"
 	"jch-metadata/internal/parser"
+	"jch-metadata/internal/parser/elf"
 	"jch-metadata/internal/parser/flac"
 	"jch-metadata/internal/parser/jpeg"
 	"jch-metadata/internal/parser/mkv"
@@ -26,6 +27,7 @@ var parsers = []parser.Parser{
 	webp.Parser,
 	mkv.Parser,
 	mp4.Parser,
+	elf.Parser,
 }
 
 func parseFile(fileName string, action parser.Action) {
